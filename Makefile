@@ -1,0 +1,27 @@
+# File and directory paths
+DATA_GENERATED = data_generated
+DATA_PROCESSED = data_processed
+RESULTS = results
+MODEL_SAVE_DIR = training
+
+# Default goal: `make` will invoke this by default if no target is provided
+.DEFAULT_GOAL := train
+
+# Rule to generate Tensor dataset (for example, if raw data is missing)
+$(DATA_GENERATED):
+	python3 -m sensors.scripts.preprocess
+
+$(DATA_PROCESSED): $(DATA_GENERATED)
+	python3 -m sensors.scripts.save_dataset
+
+# Rule to train the model with specific parameters
+train: $(DATA_PROCESSED)
+	python3 -m sensors.scripts.train \
+		--learning_rate 0.0001 \
+		--feature_length 27 \
+		--epochs 50 \
+		--threshold 0.5 \
+		--hidden_layers 32 \
+		--pos_weight 3 \
+		--batch_size 4096 \
+		--gamma 0.975
