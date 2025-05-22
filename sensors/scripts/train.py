@@ -3,13 +3,13 @@ import uuid
 from pathlib import Path
 
 import numpy as np
-import onnx
 import tensorflow as tf
 import tf2onnx
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 from tqdm import trange
 
-from sensors.models.H2_scaled import Conv_Attn_Conv_Scaled
+# from sensors.models.H2_scaled import Conv_Attn_Conv_Scaled
+from sensors.models.H3_scaled import Conv_Attn_Conv_Scaled
 from sensors.utils.dataset import create_sequence_dataset
 
 
@@ -144,14 +144,27 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
     # onnx_model, _ = tf2onnx.convert.from_keras(best_model, input_signature, opset=16)
     onnx_model, _ = tf2onnx.convert.from_function(model_inference, input_signature=input_signature, opset=16,
                                                   output_path=str(model_save_path / "best_model.onnx"))
+
     # onnx.save(onnx_model, model_save_path / "best_model.onnx")
+
+    def representative_data_gen():
+
+        temp_ds = create_sequence_dataset(
+        args.base_dir / "train", batch_size=1)
+        for x_batch, _ in temp_ds:
+            yield [x_batch]
 
     # Convert to TFLite
     concrete_func = model_inference.get_concrete_function()
     converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter.representative_dataset = representative_data_gen
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+    converter.inference_input_type = tf.int8
+    converter.inference_output_type = tf.int8
     tflite_model = converter.convert()
 
-    with open(model_save_path / "best_model.tflite", "wb") as f:
+    with open(model_save_path / "best_model_int8.tflite", "wb") as f:
         f.write(tflite_model)
 
 
