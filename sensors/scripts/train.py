@@ -11,6 +11,7 @@ from tqdm import trange
 # from sensors.models.H2_scaled import Conv_Attn_Conv_Scaled
 from sensors.models.H3_scaled import Conv_Attn_Conv_Scaled
 from sensors.utils.dataset import create_sequence_dataset
+from sensors.utils.onnx import create_standalone_model_with_embedded_scaling
 
 
 def parse_args():
@@ -131,6 +132,8 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
             model.save(checkpoint_path)
 
     best_model = tf.keras.models.load_model(checkpoint_path)
+    # best_model = wrap_model_with_scaler_file(best_model, "standardscaler.pkl")
+    best_model = create_standalone_model_with_embedded_scaling(best_model, "StandardScaler.pkl")
     dummy_input = tf.random.uniform([1, 101, 27], dtype=tf.float32)
     _ = best_model(dummy_input)
 
@@ -150,8 +153,8 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
     def representative_data_gen():
 
         temp_ds = create_sequence_dataset(
-        args.base_dir / "train", batch_size=1)
-        for x_batch, _ in temp_ds:
+            args.base_dir / "train", batch_size=1)
+        for x_batch, _ in temp_ds.take(10):
             yield [x_batch]
 
     # Convert to TFLite
