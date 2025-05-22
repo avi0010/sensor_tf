@@ -2,10 +2,8 @@ import argparse
 import uuid
 from pathlib import Path
 
-import numpy as np
 import tensorflow as tf
 import tf2onnx
-from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 from tqdm import trange
 
 # from sensors.models.H2_scaled import Conv_Attn_Conv_Scaled
@@ -30,63 +28,83 @@ def parse_args():
     return parser.parse_args()
 
 
+@tf.function
+def train_step(model, x_batch, y_batch, optimizer, metrics):
+    with tf.GradientTape() as tape:
+        logits = model(x_batch, training=True)
+        logits = tf.squeeze(logits, axis=-1)
+        loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=3)
+        loss = tf.reduce_mean(loss)
+
+    grads = tape.gradient(loss, model.trainable_weights)
+    optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+    preds = tf.cast(tf.sigmoid(logits) > 0.5, tf.float32)
+
+    # Update metrics
+    metrics["loss"].update_state(loss)
+    metrics["accuracy"].update_state(y_batch, preds)
+    metrics["precision"].update_state(y_batch, preds)
+    metrics["recall"].update_state(y_batch, preds)
+
+    # Manually compute F1 per batch and update running mean
+    precision = metrics["precision"].result()
+    recall = metrics["recall"].result()
+    f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
+    metrics["f1"].update_state(f1)
+
+
 def train_one_epoch(model, train_ds, optimizer):
-    epoch_loss = []
-    y_true, y_pred = [], []
+    metrics = create_metrics()
 
     for x_batch, y_batch in train_ds:
         y_batch = tf.cast(y_batch, tf.float32)
+        train_step(model, x_batch, y_batch, optimizer, metrics)
 
-        with tf.GradientTape() as tape:
-            logits = model(x_batch, training=True)
-            logits = tf.squeeze(logits, axis=-1)
-            loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=0.01)
-            loss = tf.reduce_mean(loss)
+    return {name: metric.result().numpy() for name, metric in metrics.items()}
 
-        grads = tape.gradient(loss, model.trainable_weights)
-        optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
-        preds = tf.sigmoid(logits)
-        preds = tf.cast(preds > 0.5, tf.float32)
+@tf.function
+def val_step(model, x_batch, y_batch, metrics):
+    logits = model(x_batch, training=False)
+    logits = tf.squeeze(logits, axis=-1)
+    loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=3)
+    loss = tf.reduce_mean(loss)
 
-        y_true.extend(y_batch.numpy().flatten())
-        y_pred.extend(preds.numpy().flatten())
-        epoch_loss.append(loss.numpy())
+    preds = tf.cast(tf.sigmoid(logits) > 0.5, tf.float32)
 
-    metrics = compute_metrics(y_true, y_pred, epoch_loss)
-    return metrics
+    # Update metrics
+    metrics["loss"].update_state(loss)
+    metrics["accuracy"].update_state(y_batch, preds)
+    metrics["precision"].update_state(y_batch, preds)
+    metrics["recall"].update_state(y_batch, preds)
+
+    # Manually compute F1 per batch
+    precision = metrics["precision"].result()
+    recall = metrics["recall"].result()
+    f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
+    metrics["f1"].update_state(f1)
 
 
 def validate_one_epoch(model, val_ds):
-    epoch_loss = []
-    y_true, y_pred = [], []
+    metrics = create_metrics()
 
     for x_batch, y_batch in val_ds:
         y_batch = tf.cast(y_batch, tf.float32)
-        logits = model(x_batch, training=False)
-        logits = tf.squeeze(logits, axis=-1)
-        loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=0.01)
-        loss = tf.reduce_mean(loss)
+        val_step(model, x_batch, y_batch, metrics)
 
-        preds = tf.sigmoid(logits)
-        preds = tf.cast(preds > 0.5, tf.float32)
-
-        y_true.extend(y_batch.numpy().flatten())
-        y_pred.extend(preds.numpy().flatten())
-        epoch_loss.append(loss.numpy())
-
-    metrics = compute_metrics(y_true, y_pred, epoch_loss)
-    print(metrics)
-    return metrics
+    results = {name: metric.result().numpy() for name, metric in metrics.items()}
+    print(results)
+    return results
 
 
-def compute_metrics(y_true, y_pred, losses):
+def create_metrics():
     return {
-        "loss": np.mean(losses),
-        "accuracy": accuracy_score(y_true, y_pred),
-        "precision": precision_score(y_true, y_pred, average="binary", zero_division=0),
-        "recall": recall_score(y_true, y_pred, average="binary", zero_division=0),
-        "f1": f1_score(y_true, y_pred, average="binary", zero_division=0),
+        "loss": tf.keras.metrics.Mean(name="loss"),
+        "accuracy": tf.keras.metrics.BinaryAccuracy(name="accuracy"),
+        "precision": tf.keras.metrics.Precision(name="precision"),
+        "recall": tf.keras.metrics.Recall(name="recall"),
+        "f1": tf.keras.metrics.Mean(name="f1"),  # We'll compute F1 manually per batch
     }
 
 
@@ -127,8 +145,8 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
             tf.summary.scalar("f1", val_metrics["f1"], step=epoch + 1)
 
         # Save best model
-        if val_metrics["loss"] < best_val_loss:
-            best_val_loss = val_metrics["loss"]
+        if val_metrics["f1"] < best_val_loss:
+            best_val_loss = val_metrics["f1"]
             model.save(checkpoint_path)
 
     best_model = tf.keras.models.load_model(checkpoint_path)

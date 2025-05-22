@@ -38,7 +38,7 @@ def create_sequence_dataset(
 
     ds = path_ds.map(load_npz_tf, num_parallel_calls=tf.data.AUTOTUNE)
 
-    ds = ds.batch(batch_size)
+    ds = ds.batch(batch_size, drop_remainder=True)
 
     if prefetch:
         ds = ds.prefetch(tf.data.AUTOTUNE)
