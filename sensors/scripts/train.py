@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import tensorflow as tf
 import tf2onnx
-from tqdm import trange
+from tqdm import trange, tqdm
 
 # from sensors.models.H2_scaled import Conv_Attn_Conv_Scaled
 from sensors.models.H3_scaled import Conv_Attn_Conv_Scaled
@@ -59,7 +59,7 @@ def train_step(model, x_batch, y_batch, optimizer, metrics):
 def train_one_epoch(model, train_ds, optimizer):
     metrics = create_metrics()
 
-    for x_batch, y_batch in train_ds:
+    for x_batch, y_batch in tqdm(train_ds, leave=False):
         y_batch = tf.cast(y_batch, tf.float32)
         train_step(model, x_batch, y_batch, optimizer, metrics)
 
