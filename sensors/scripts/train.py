@@ -2,6 +2,7 @@ import argparse
 import uuid
 from pathlib import Path
 
+import numpy as np
 import tensorflow as tf
 import tf2onnx
 from tqdm import trange
@@ -9,6 +10,7 @@ from tqdm import trange
 # from sensors.models.H2_scaled import Conv_Attn_Conv_Scaled
 from sensors.models.H3_scaled import Conv_Attn_Conv_Scaled
 from sensors.utils.dataset import create_sequence_dataset
+from sensors.utils.dataset_tfRecord import create_tfrecord_dataset
 from sensors.utils.onnx import create_standalone_model_with_embedded_scaling
 
 
@@ -124,7 +126,7 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
 
     checkpoint_path = model_save_path / "best_model.keras"
 
-    best_val_loss = 0.0
+    best_val_loss =float(np.inf)
     for epoch in trange(args.epochs):
         train_metrics = train_one_epoch(model, train_ds, optimizer)
         val_metrics = validate_one_epoch(model, val_ds)
@@ -145,8 +147,8 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
             tf.summary.scalar("f1", val_metrics["f1"], step=epoch + 1)
 
         # Save best model
-        if val_metrics["f1"] > best_val_loss:
-            best_val_loss = val_metrics["f1"]
+        if val_metrics["loss"] < best_val_loss:
+            best_val_loss = val_metrics["loss"]
             model.save(checkpoint_path)
 
     best_model = tf.keras.models.load_model(checkpoint_path)
@@ -192,21 +194,17 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
 
 def main():
     args = parse_args()
-
     model = Conv_Attn_Conv_Scaled(
         input_dim=args.feature_length,
         n_heads=args.heads,
         hidden=args.hidden_layers,
     )
 
-    train_ds = create_sequence_dataset(
-        args.base_dir / "train", batch_size=args.batch_size
-    )
+    train_ds = create_tfrecord_dataset(args.base_dir / "train.tfrecord", batch_size=args.batch_size)
 
-    val_ds = create_sequence_dataset(args.base_dir / "val", batch_size=args.batch_size)
+    val_ds = create_tfrecord_dataset(args.base_dir / "val.tfrecord", batch_size=args.batch_size, shuffle=False)
 
     train(model, train_ds, val_ds, args)
-
 
 if __name__ == "__main__":
     main()
