@@ -29,7 +29,7 @@ def _float_feature(value):
 def serialize_example(X, y):
     feature = {
         'X': _bytes_feature(X.tobytes()),  # serialize the array
-        'y': _float_feature([y])           # single float label
+        'y': _float_feature([float(y)])           # single float label
     }
     example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
     return example_proto.SerializeToString()
