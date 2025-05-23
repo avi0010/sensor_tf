@@ -4,7 +4,7 @@ from tensorflow.keras import layers
 
 
 class DepthwiseSeparableConv(keras.layers.Layer):
-    def __init__(self, filters: int, kernel_size: int = 7):
+    def __init__(self, filters: int, kernel_size: int = 5):
         super(DepthwiseSeparableConv, self).__init__()
         self.depthwise = layers.DepthwiseConv1D(kernel_size=kernel_size, padding="same")
         self.pointwise = layers.Conv1D(filters=filters, kernel_size=1)
@@ -15,24 +15,19 @@ class DepthwiseSeparableConv(keras.layers.Layer):
         return x
 
 
-class LearnablePositionalEncoding(keras.layers.Layer):
-    def __init__(self, d_model: int, max_len: int):
-        super(LearnablePositionalEncoding, self).__init__()
-        self.positional_encoding = self.add_weight(
-            name="pos_encoding",
-            shape=(1, max_len, d_model),
-            initializer="zeros",
+class LearnablePositionalEncoding(tf.keras.layers.Layer):
+    def __init__(self, max_len, d_model):
+        super().__init__()
+        self.pos_encoding = self.add_weight(
+            shape=(max_len, d_model),
+            initializer=tf.keras.initializers.RandomNormal(stddev=0.02),
             trainable=True,
+            name="learnable_positional_encoding"
         )
-        self.max_len = max_len
-        self.d_model = d_model
 
     def call(self, x):
         seq_len = tf.shape(x)[1]
-        pos_enc = tf.slice(
-            self.positional_encoding, begin=[0, 0, 0], size=[-1, seq_len, -1]
-        )
-        return x + pos_enc
+        return x + self.pos_encoding[:seq_len]
 
 
 class ScaledDotProductAttention(tf.keras.layers.Layer):
@@ -134,3 +129,30 @@ class TransformerEncoder(tf.keras.Model):
             x = enc_layer(x, training=training, mask=mask)
 
         return x  # shape: (batch_size, input_seq_len, d_model)
+
+
+class SqueezeExcitation(tf.keras.layers.Layer):
+    """
+    Squeeze-and-Excitation block for channel attention
+    """
+
+    def __init__(self, channels, reduction_ratio=4, **kwargs):
+        super().__init__(**kwargs)
+        self.channels = channels
+
+        self.squeeze = tf.keras.layers.GlobalAveragePooling1D()
+        self.excitation = tf.keras.Sequential([
+            tf.keras.layers.Dense(max(channels // reduction_ratio, 4), activation='relu'),
+            tf.keras.layers.Dense(channels, activation='sigmoid')
+        ])
+
+    def call(self, x, training=False):
+        # Squeeze: [batch, seq_len, channels] -> [batch, channels]
+        squeezed = self.squeeze(x)
+
+        # Excitation: Learn channel importance weights
+        weights = self.excitation(squeezed, training=training)  # [batch, channels]
+
+        # Apply attention: [batch, 1, channels] broadcast multiply
+        weights = tf.expand_dims(weights, axis=1)
+        return x * weights
