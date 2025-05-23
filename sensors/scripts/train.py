@@ -112,6 +112,7 @@ def create_metrics():
 
 def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Dataset, args):
     model_save_path = Path(args.save_dir) / str(uuid.uuid4())
+    print(model_save_path)
 
     train_writer = tf.summary.create_file_writer(str(model_save_path / "results" / "train"))
     val_writer = tf.summary.create_file_writer(str(model_save_path / "results" / "val"))
@@ -196,7 +197,6 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
 def main():
     args = parse_args()
     model = Conv_Attn_Conv_Scaled(
-        input_dim=args.feature_length,
         n_heads=args.heads,
         hidden=args.hidden_layers,
     )

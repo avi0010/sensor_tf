@@ -50,6 +50,8 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
 
         # Efficient output processing
         self.output_mlp = tf.keras.Sequential([
+            tf.keras.layers.Dense(hidden, activation=tf.nn.relu),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.Dense(1)
         ])
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
@@ -60,20 +62,19 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
         temporal_embed = self.temporal_conv(x, training=training)
         temporal_embed_pos = self.positional_encoding(temporal_embed)
         temporal_features = self.temporal_encoder(temporal_embed_pos, training=training)
-        temporal_pooled = tf.reduce_mean(temporal_features, axis=1, keepdims=True)
 
         channel_attended = self.channel_attention(temporal_features, training=training)
 
         cross_attn_out = self.cross_attention(
-            q=temporal_pooled,  # Temporal features asking questions
+            q=temporal_features,  # Temporal features asking questions
             k=channel_attended,  # Channel features as keys
             v=channel_attended,  # Channel features as values
             training=training
         )
 
-        cross_final = tf.squeeze(cross_attn_out, axis=1)  # [batch, dim]
+        cross_flat = tf.reshape(cross_attn_out, [batch_size, -1])
 
-        return self.output_mlp(cross_final, training=training)
+        return self.output_mlp(cross_flat, training=training)
 
     def get_config(self):
         config = super().get_config()
