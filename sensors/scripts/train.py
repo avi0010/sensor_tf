@@ -124,7 +124,7 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
 
     checkpoint_path = model_save_path / "best_model.keras"
 
-    best_val_loss = float("inf")
+    best_val_loss = 0.0
     for epoch in trange(args.epochs):
         train_metrics = train_one_epoch(model, train_ds, optimizer)
         val_metrics = validate_one_epoch(model, val_ds)
@@ -145,7 +145,7 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
             tf.summary.scalar("f1", val_metrics["f1"], step=epoch + 1)
 
         # Save best model
-        if val_metrics["f1"] < best_val_loss:
+        if val_metrics["f1"] > best_val_loss:
             best_val_loss = val_metrics["f1"]
             model.save(checkpoint_path)
 
@@ -180,9 +180,10 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
     converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.representative_dataset = representative_data_gen
-    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-    converter.inference_input_type = tf.int8
-    converter.inference_output_type = tf.int8
+    # converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+    # converter.target_spec.supported_types = [tf.int8]
+    # converter.inference_input_type = tf.int8
+    # converter.inference_output_type = tf.int8
     tflite_model = converter.convert()
 
     with open(model_save_path / "best_model_int8.tflite", "wb") as f:
