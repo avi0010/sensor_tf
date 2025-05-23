@@ -126,7 +126,7 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
 
     checkpoint_path = model_save_path / "best_model.keras"
 
-    best_val_loss =float(np.inf)
+    best_val_loss = float(np.inf)
     for epoch in trange(args.epochs):
         train_metrics = train_one_epoch(model, train_ds, optimizer)
         val_metrics = validate_one_epoch(model, val_ds)
@@ -174,7 +174,7 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
 
         temp_ds = create_sequence_dataset(
             args.base_dir / "train", batch_size=1)
-        for x_batch, _ in temp_ds.take(10):
+        for x_batch, _ in temp_ds:
             yield [x_batch]
 
     # Convert to TFLite
@@ -182,10 +182,11 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
     converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.representative_dataset = representative_data_gen
-    # converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-    # converter.target_spec.supported_types = [tf.int8]
-    # converter.inference_input_type = tf.int8
-    # converter.inference_output_type = tf.int8
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8,
+                                           tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+    converter.target_spec.supported_types = [tf.int8]
+    converter.inference_input_type = tf.int8
+    converter.inference_output_type = tf.int8
     tflite_model = converter.convert()
 
     with open(model_save_path / "best_model_int8.tflite", "wb") as f:
@@ -205,6 +206,7 @@ def main():
     val_ds = create_tfrecord_dataset(args.base_dir / "val.tfrecord", batch_size=args.batch_size, shuffle=False)
 
     train(model, train_ds, val_ds, args)
+
 
 if __name__ == "__main__":
     main()
