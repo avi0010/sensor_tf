@@ -9,7 +9,6 @@ from tqdm import trange, tqdm
 
 # from sensors.models.H2_scaled import Conv_Attn_Conv_Scaled
 from sensors.models.H3_scaled import Conv_Attn_Conv_Scaled
-from sensors.utils.dataset import create_sequence_dataset
 from sensors.utils.dataset_tfRecord import create_tfrecord_dataset
 from sensors.utils.onnx import create_standalone_model_with_embedded_scaling
 
@@ -173,8 +172,7 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
 
     def representative_data_gen():
 
-        temp_ds = create_sequence_dataset(
-            args.base_dir / "train", batch_size=1)
+        temp_ds = create_tfrecord_dataset(args.base_dir / "train.tfrecord", batch_size=1)
         for x_batch, _ in temp_ds:
             yield [x_batch]
 
