@@ -30,11 +30,11 @@ def parse_args():
 
 
 @tf.function
-def train_step(model, x_batch, y_batch, optimizer, metrics):
+def train_step(model, x_batch, y_batch, optimizer, metrics, pos_weight):
     with tf.GradientTape() as tape:
         logits = model(x_batch, training=True)
         logits = tf.squeeze(logits, axis=-1)
-        loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=3)
+        loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=pos_weight)
         loss = tf.reduce_mean(loss)
 
     grads = tape.gradient(loss, model.trainable_weights)
@@ -45,31 +45,31 @@ def train_step(model, x_batch, y_batch, optimizer, metrics):
     # Update metrics
     metrics["loss"].update_state(loss)
     metrics["accuracy"].update_state(y_batch, preds)
-    metrics["precision"].update_state(y_batch, preds)
-    metrics["recall"].update_state(y_batch, preds)
 
-    # Manually compute F1 per batch and update running mean
-    precision = metrics["precision"].result()
-    recall = metrics["recall"].result()
-    f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
-    metrics["f1"].update_state(f1)
+    tp = tf.reduce_sum(y_batch * preds)
+    fp = tf.reduce_sum((1 - y_batch) * preds)
+    fn = tf.reduce_sum(y_batch * (1 - preds))
+
+    metrics["tp"].update_state(tp)
+    metrics["fp"].update_state(fp)
+    metrics["fn"].update_state(fn)
 
 
-def train_one_epoch(model, train_ds, optimizer):
+def train_one_epoch(model, train_ds, optimizer, pos_weight, train_ds_length):
     metrics = create_metrics()
 
-    for x_batch, y_batch in tqdm(train_ds, leave=False):
+    for x_batch, y_batch in tqdm(train_ds, leave=False, total=train_ds_length):
         y_batch = tf.cast(y_batch, tf.float32)
-        train_step(model, x_batch, y_batch, optimizer, metrics)
+        train_step(model, x_batch, y_batch, optimizer, metrics, pos_weight)
 
-    return {name: metric.result().numpy() for name, metric in metrics.items()}
+    return calculate_epoch_metrics(metrics)
 
 
 @tf.function
-def val_step(model, x_batch, y_batch, metrics):
+def val_step(model, x_batch, y_batch, metrics, pos_weight):
     logits = model(x_batch, training=False)
     logits = tf.squeeze(logits, axis=-1)
-    loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=3)
+    loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=pos_weight)
     loss = tf.reduce_mean(loss)
 
     preds = tf.cast(tf.sigmoid(logits) > 0.5, tf.float32)
@@ -77,48 +77,65 @@ def val_step(model, x_batch, y_batch, metrics):
     # Update metrics
     metrics["loss"].update_state(loss)
     metrics["accuracy"].update_state(y_batch, preds)
-    metrics["precision"].update_state(y_batch, preds)
-    metrics["recall"].update_state(y_batch, preds)
 
-    # Manually compute F1 per batch
-    precision = metrics["precision"].result()
-    recall = metrics["recall"].result()
-    f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
-    metrics["f1"].update_state(f1)
+    tp = tf.reduce_sum(y_batch * preds)
+    fp = tf.reduce_sum((1 - y_batch) * preds)
+    fn = tf.reduce_sum(y_batch * (1 - preds))
+
+    metrics["tp"].update_state(tp)
+    metrics["fp"].update_state(fp)
+    metrics["fn"].update_state(fn)
 
 
-def validate_one_epoch(model, val_ds):
+def validate_one_epoch(model, val_ds, pos_weight):
     metrics = create_metrics()
 
     for x_batch, y_batch in val_ds:
         y_batch = tf.cast(y_batch, tf.float32)
-        val_step(model, x_batch, y_batch, metrics)
+        val_step(model, x_batch, y_batch, metrics, pos_weight)
 
-    results = {name: metric.result().numpy() for name, metric in metrics.items()}
+    results = calculate_epoch_metrics(metrics)
     print(results)
     return results
 
+def calculate_epoch_metrics(metrics):
+    """Calculate precision, recall, F1 from accumulated TP, FP, FN"""
+    tp = metrics["tp"].result()
+    fp = metrics["fp"].result()
+    fn = metrics["fn"].result()
+
+    precision = tp / (tp + fp + 1e-8)
+    recall = tp / (tp + fn + 1e-8)
+    f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
+
+    return {
+        "loss": metrics["loss"].result().numpy(),
+        "accuracy": metrics["accuracy"].result().numpy(),
+        "precision": precision.numpy(),
+        "recall": recall.numpy(),
+        "f1": f1.numpy()
+    }
 
 def create_metrics():
     return {
         "loss": tf.keras.metrics.Mean(name="loss"),
         "accuracy": tf.keras.metrics.BinaryAccuracy(name="accuracy"),
-        "precision": tf.keras.metrics.Precision(name="precision"),
-        "recall": tf.keras.metrics.Recall(name="recall"),
-        "f1": tf.keras.metrics.Mean(name="f1"),  # We'll compute F1 manually per batch
+        "tp": tf.keras.metrics.Sum(name="true_positives"),
+        "fp": tf.keras.metrics.Sum(name="false_positives"),
+        "fn": tf.keras.metrics.Sum(name="false_negatives"),
     }
 
 
 def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Dataset, args):
     model_save_path = Path(args.save_dir) / str(uuid.uuid4())
-    print(model_save_path)
 
     train_writer = tf.summary.create_file_writer(str(model_save_path / "results" / "train"))
     val_writer = tf.summary.create_file_writer(str(model_save_path / "results" / "val"))
 
+    train_ds_length = sum(1 for _ in train_ds)
     lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
         initial_learning_rate=args.learning_rate,
-        decay_steps=1,
+        decay_steps=train_ds_length,
         decay_rate=args.gamma,
         staircase=True,
     )
@@ -128,8 +145,8 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
 
     best_val_loss = float(np.inf)
     for epoch in trange(args.epochs):
-        train_metrics = train_one_epoch(model, train_ds, optimizer)
-        val_metrics = validate_one_epoch(model, val_ds)
+        train_metrics = train_one_epoch(model, train_ds, optimizer, args.pos_weight, train_ds_length)
+        val_metrics = validate_one_epoch(model, val_ds, args.pos_weight)
 
         # Logging
         with train_writer.as_default():
