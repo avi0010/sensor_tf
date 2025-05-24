@@ -5,7 +5,7 @@ from tensorflow.keras import layers
 from sensors.config import LENGTH
 from sensors.models.modules import (
     DepthwiseSeparableConv,
-    SqueezeExcitation,
+    CBAM,
     MultiHeadAttention,
     TransformerEncoder,
 )
@@ -30,7 +30,7 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
         self.dropout_rate = dropout_rate
 
         self.temporal_conv = DepthwiseSeparableConv(filters=transformer_dim, kernel_size=7)
-        self.channel_attention = SqueezeExcitation(channels=transformer_dim)  # Apply to conv output
+        self.channel_attention = CBAM(channels=transformer_dim)  # Apply to conv output
         self.channel_norm = tf.keras.layers.LayerNormalization()
 
         # Add positional encoding and optional transformer

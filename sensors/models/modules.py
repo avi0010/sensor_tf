@@ -151,3 +151,106 @@ class SqueezeExcitation(tf.keras.layers.Layer):
         weights = self.excitation(se, training=training)  # [batch, channels]
         weights = tf.expand_dims(weights, 1)  # [batch, 1, channels]
         return x * weights
+
+
+class ChannelAttention(tf.keras.layers.Layer):
+    """Channel Attention Module of CBAM"""
+
+    def __init__(self, channels, reduction_ratio=4, **kwargs):
+        super().__init__(**kwargs)
+        self.channels = channels
+        self.reduction_ratio = reduction_ratio
+        self.reduced_channels = max(1, channels // reduction_ratio)
+
+        # Shared MLP layers
+        self.mlp = tf.keras.Sequential([
+            layers.Dense(self.reduced_channels, activation='relu'),
+            layers.Dense(channels)
+        ])
+
+    def build(self, input_shape):
+        super().build(input_shape)
+
+    def call(self, x, training=False):
+        # x shape: (batch, time, channels) for 1D conv or (batch, height, width, channels) for 2D
+
+        # Global Average Pool and Global Max Pool
+        avg_pool = tf.reduce_mean(x, axis=1, keepdims=False)  # (batch, channels)
+        max_pool = tf.reduce_max(x, axis=1, keepdims=False)  # (batch, channels)
+
+        # Shared MLP
+        avg_out = self.mlp(avg_pool, training=training)  # (batch, channels)
+        max_out = self.mlp(max_pool, training=training)  # (batch, channels)
+
+        # Element-wise sum and sigmoid activation
+        channel_attention = tf.nn.sigmoid(avg_out + max_out)  # (batch, channels)
+
+        # Reshape to match input dimensions for broadcasting
+        channel_attention = tf.expand_dims(channel_attention, axis=1)
+
+        return x * channel_attention
+
+
+class SpatialAttention(tf.keras.layers.Layer):
+    """Spatial Attention Module of CBAM"""
+
+    def __init__(self, kernel_size=7, **kwargs):
+        super().__init__(**kwargs)
+        self.kernel_size = kernel_size
+
+    def build(self, input_shape):
+        # For 1D temporal data, use Conv1D
+        self.conv = layers.Conv1D(
+            filters=1,
+            kernel_size=self.kernel_size,
+            padding='same',
+            activation='sigmoid'
+        )
+
+        super().build(input_shape)
+
+    def call(self, x, training=False):
+        # Compute channel-wise statistics
+        avg_pool = tf.reduce_mean(x, axis=-1, keepdims=True)  # Average across channels
+        max_pool = tf.reduce_max(x, axis=-1, keepdims=True)  # Max across channels
+
+        # Concatenate along channel dimension
+        concat = tf.concat([avg_pool, max_pool], axis=-1)  # (..., 2)
+
+        # Apply convolution and sigmoid
+        spatial_attention = self.conv(concat, training=training)  # (..., 1)
+
+        return x * spatial_attention
+
+
+class CBAM(tf.keras.layers.Layer):
+    """Convolutional Block Attention Module - Following ResNet CBAM Pattern"""
+
+    def __init__(self, channels, reduction_ratio=4, kernel_size=7, **kwargs):
+        super().__init__(**kwargs)
+        self.channels = channels
+        self.reduction_ratio = reduction_ratio
+        self.kernel_size = kernel_size
+
+        self.channel_attention = ChannelAttention(
+            channels=channels,
+            reduction_ratio=reduction_ratio
+        )
+        self.spatial_attention = SpatialAttention(kernel_size=kernel_size)
+
+    def call(self, x, training=False):
+        # Store original input for final residual connection
+        residual = x
+
+        # Apply channel attention: multiply features with channel attention weights
+        channel_weights = self.channel_attention(x, training=training)
+        out = x * channel_weights
+
+        # Apply spatial attention: multiply channel-attended features with spatial attention weights
+        spatial_weights = self.spatial_attention(out, training=training)
+        out = out * spatial_weights
+
+        # Final residual connection
+        out = out + residual
+
+        return out
