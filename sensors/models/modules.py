@@ -147,12 +147,7 @@ class SqueezeExcitation(tf.keras.layers.Layer):
         ])
 
     def call(self, x, training=False):
-        # Squeeze: [batch, seq_len, channels] -> [batch, channels]
-        squeezed = self.squeeze(x)
-
-        # Excitation: Learn channel importance weights
-        weights = self.excitation(squeezed, training=training)  # [batch, channels]
-
-        # Apply attention: [batch, 1, channels] broadcast multiply
-        weights = tf.expand_dims(weights, axis=1)
+        se = self.squeeze(x)  # [batch, channels]
+        weights = self.excitation(se, training=training)  # [batch, channels]
+        weights = tf.expand_dims(weights, 1)  # [batch, 1, channels]
         return x * weights

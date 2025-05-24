@@ -5,7 +5,6 @@ from tensorflow.keras import layers
 from sensors.config import LENGTH
 from sensors.models.modules import (
     DepthwiseSeparableConv,
-    LearnablePositionalEncoding,
     SqueezeExcitation,
     MultiHeadAttention,
     TransformerEncoder,
@@ -32,11 +31,9 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
 
         self.temporal_conv = DepthwiseSeparableConv(filters=transformer_dim, kernel_size=7)
         self.channel_attention = SqueezeExcitation(channels=transformer_dim)  # Apply to conv output
+        self.channel_norm = tf.keras.layers.LayerNormalization()
 
         # Add positional encoding and optional transformer
-        self.positional_encoding = LearnablePositionalEncoding(
-            max_len=LENGTH, d_model=transformer_dim
-        )
         self.temporal_encoder = TransformerEncoder(
             num_layers=num_layers,
             d_model=transformer_dim,
@@ -51,30 +48,33 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
         # Efficient output processing
         self.output_mlp = tf.keras.Sequential([
             tf.keras.layers.Dense(hidden, activation=tf.nn.relu),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Dense(1)
+            tf.keras.layers.LayerNormalization(),
+            tf.keras.layers.Dropout(dropout_rate),
+            tf.keras.layers.Dense(1),
         ])
-        self.dropout = tf.keras.layers.Dropout(dropout_rate)
+
+        self.pooled_norm = tf.keras.layers.LayerNormalization()
 
     def call(self, x, training=False):
         batch_size = tf.shape(x)[0]
 
         temporal_embed = self.temporal_conv(x, training=training)
-        temporal_embed_pos = self.positional_encoding(temporal_embed)
-        temporal_features = self.temporal_encoder(temporal_embed_pos, training=training)
+        temporal_features = self.temporal_encoder(temporal_embed, training=training)
 
         channel_attended = self.channel_attention(temporal_features, training=training)
+        channel_attended = self.channel_norm(channel_attended + temporal_features, training=training)
+        channel_tokens = tf.reduce_mean(channel_attended, axis=1, keepdims=True)  # (B, 1, C)
 
         cross_attn_out = self.cross_attention(
-            q=temporal_features,  # Temporal features asking questions
-            k=channel_attended,  # Channel features as keys
-            v=channel_attended,  # Channel features as values
+            q=channel_tokens,
+            k=channel_attended,
+            v=channel_attended,
             training=training
         )
 
-        cross_flat = tf.reshape(cross_attn_out, [batch_size, -1])
+        pooled = tf.reduce_mean(self.pooled_norm(cross_attn_out, training=training), axis=1)
 
-        return self.output_mlp(cross_flat, training=training)
+        return self.output_mlp(pooled, training=training)
 
     def get_config(self):
         config = super().get_config()
