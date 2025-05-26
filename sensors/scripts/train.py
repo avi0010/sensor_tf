@@ -2,7 +2,6 @@ import argparse
 import uuid
 from pathlib import Path
 
-import numpy as np
 import tensorflow as tf
 import tf2onnx
 from tqdm import trange, tqdm
@@ -98,6 +97,7 @@ def validate_one_epoch(model, val_ds, pos_weight):
     print(results)
     return results
 
+
 def calculate_epoch_metrics(metrics):
     """Calculate precision, recall, F1 from accumulated TP, FP, FN"""
     tp = metrics["tp"].result()
@@ -115,6 +115,7 @@ def calculate_epoch_metrics(metrics):
         "recall": recall.numpy(),
         "f1": f1.numpy()
     }
+
 
 def create_metrics():
     return {
@@ -143,7 +144,7 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
 
     checkpoint_path = model_save_path / "best_model.keras"
 
-    best_val_loss = float(np.inf)
+    best_val_f1 = 0.0
     for epoch in trange(args.epochs):
         train_metrics = train_one_epoch(model, train_ds, optimizer, args.pos_weight, train_ds_length)
         val_metrics = validate_one_epoch(model, val_ds, args.pos_weight)
@@ -164,8 +165,9 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
             tf.summary.scalar("f1", val_metrics["f1"], step=epoch + 1)
 
         # Save best model
-        if val_metrics["loss"] < best_val_loss:
-            best_val_loss = val_metrics["loss"]
+        model.save(model_save_path / f"epoch-{epoch + 1}_p-{val_metrics['f1']}.keras")
+        if val_metrics["f1"] > best_val_f1:
+            best_val_f1 = val_metrics["f1"]
             model.save(checkpoint_path)
 
     best_model = tf.keras.models.load_model(checkpoint_path)
