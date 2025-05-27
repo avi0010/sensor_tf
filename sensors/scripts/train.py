@@ -9,7 +9,7 @@ from tqdm import trange, tqdm
 # from sensors.models.H2_scaled import Conv_Attn_Conv_Scaled
 from sensors.models.H3_scaled import Conv_Attn_Conv_Scaled
 from sensors.utils.dataset_tfRecord import create_tfrecord_dataset
-from sensors.utils.onnx import create_standalone_model_with_embedded_scaling
+from sensors.utils.onnx import create_standalone_model_with_embedded_scaling, descale_data
 
 
 def parse_args():
@@ -193,18 +193,17 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
 
         temp_ds = create_tfrecord_dataset(args.base_dir / "train.tfrecord", batch_size=1)
         for x_batch, _ in temp_ds:
-            yield [x_batch]
+            yield [descale_data(x_batch)]
 
     # Convert to TFLite
     concrete_func = model_inference.get_concrete_function()
     converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.representative_dataset = representative_data_gen
-    converter.target_spec.supported_ops = [tf.lite.OpsSet.EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8,
-                                           tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-    converter.target_spec.supported_types = [tf.int8]
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
     converter.inference_input_type = tf.int8
     converter.inference_output_type = tf.int8
+    converter.experimental_new_converter = True
     tflite_model = converter.convert()
 
     with open(model_save_path / "best_model_int8.tflite", "wb") as f:
