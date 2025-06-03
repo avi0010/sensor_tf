@@ -1,5 +1,5 @@
 from pathlib import Path
-from pickle import dump, load
+from pickle import dump
 
 import pandas as pd
 from sklearn.preprocessing import StandardScaler

@@ -12,7 +12,7 @@ $(DATA_GENERATED):
 	python3 -m sensors.scripts.preprocess
 
 $(DATA_PROCESSED): $(DATA_GENERATED)
-	python3 -m sensors.scripts.save_dataset
+	python3 -m sensors.scripts.save_dataset_tfRecord
 
 # Rule to train the model with specific parameters
 train: $(DATA_PROCESSED)

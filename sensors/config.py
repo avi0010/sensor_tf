@@ -28,7 +28,7 @@ SHEETS = [
 ENVIRONMENT = ["Temperature Deriv.", "Humidity Deriv."]
 OUTPUTS = ["Exposure"]
 
-INPUTS = SHEETS + ENVIRONMENT
+INPUTS =  ENVIRONMENT + SHEETS
 SENSORS = INPUTS + OUTPUTS
 
 PARAMETER = "Raw Deriv."

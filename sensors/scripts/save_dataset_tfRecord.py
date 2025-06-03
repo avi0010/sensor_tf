@@ -42,7 +42,7 @@ def save_to_tfrecord(file_path: Path, tfrecord_writer: tf.io.TFRecordWriter):
 
     data_file = data_generated_dir / file_name
     df = pd.read_excel(data_file)
-    df[INPUTS] = sc.transform(df[INPUTS])
+    # df[INPUTS] = sc.transform(df[INPUTS])
 
     for window in df.rolling(window=LENGTH, step=1):
         if len(window) < LENGTH:

@@ -6,10 +6,8 @@ import tensorflow as tf
 import tf2onnx
 from tqdm import trange, tqdm
 
-# from sensors.models.H2_scaled import Conv_Attn_Conv_Scaled
-from sensors.models.H3_scaled import Conv_Attn_Conv_Scaled
+from sensors.models.exlite import Exlite
 from sensors.utils.dataset_tfRecord import create_tfrecord_dataset
-from sensors.utils.onnx import create_standalone_model_with_embedded_scaling, descale_data
 
 
 def parse_args():
@@ -171,8 +169,6 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
             model.save(checkpoint_path)
 
     best_model = tf.keras.models.load_model(checkpoint_path)
-    # best_model = wrap_model_with_scaler_file(best_model, "standardscaler.pkl")
-    best_model = create_standalone_model_with_embedded_scaling(best_model, "StandardScaler.pkl")
     dummy_input = tf.random.uniform([1, 101, 27], dtype=tf.float32)
     _ = best_model(dummy_input)
 
@@ -183,26 +179,24 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
     def model_inference(x):
         return best_model(x)
 
-    # onnx_model, _ = tf2onnx.convert.from_keras(best_model, input_signature, opset=16)
     onnx_model, _ = tf2onnx.convert.from_function(model_inference, input_signature=input_signature, opset=16,
                                                   output_path=str(model_save_path / "best_model.onnx"))
 
-    # onnx.save(onnx_model, model_save_path / "best_model.onnx")
 
     def representative_data_gen():
-
-        temp_ds = create_tfrecord_dataset(args.base_dir / "train.tfrecord", batch_size=1)
+        temp_ds = create_tfrecord_dataset(args.base_dir / "train.tfrecord", 1, shuffle=False)
         for x_batch, _ in temp_ds:
-            yield [descale_data(x_batch)]
+            yield [x_batch]
 
     # Convert to TFLite
     concrete_func = model_inference.get_concrete_function()
     converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    converter.representative_dataset = representative_data_gen
-    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-    converter.inference_input_type = tf.int8
-    converter.inference_output_type = tf.int8
+    # converter.representative_dataset = representative_data_gen
+    # converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8, tf.lite.OpsSet.TFLITE_BUILTINS]
+    # converter.target_spec.supported_types = [tf.float16]
+    # converter.inference_input_type = tf.int8
+    # converter.inference_output_type = tf.int8
     converter.experimental_new_converter = True
     tflite_model = converter.convert()
 
@@ -212,8 +206,7 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
 
 def main():
     args = parse_args()
-    model = Conv_Attn_Conv_Scaled(
-        n_heads=args.heads,
+    model = Exlite(
         hidden=args.hidden_layers,
     )
 
