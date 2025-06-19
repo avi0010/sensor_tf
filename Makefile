@@ -22,6 +22,8 @@ train: $(DATA_PROCESSED)
 		--epochs 50 \
 		--threshold 0.5 \
 		--hidden_layers 32 \
-		--pos_weight 3 \
-		--batch_size 4096 \
+		--pos_weight 0.1 \
+		--batch_size 1024 \
+		--heads 2 \
+		--linformer_dim 64\
 		--gamma 0.975

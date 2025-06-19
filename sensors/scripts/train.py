@@ -6,7 +6,7 @@ import tensorflow as tf
 import tf2onnx
 from tqdm import trange, tqdm
 
-from sensors.models.exlite import Exlite
+from sensors.models.H3 import Conv_Attn_Conv_Scaled
 from sensors.utils.dataset_tfRecord import create_tfrecord_dataset
 
 
@@ -20,6 +20,7 @@ def parse_args():
     parser.add_argument("--pos_weight", type=float, default=3)
     parser.add_argument("--batch_size", type=int, default=4096)
     parser.add_argument("--heads", type=int, default=2)
+    parser.add_argument("--linformer_dim", type=int, default=64)
     parser.add_argument("--base_dir", type=Path, default="data_processed")
     parser.add_argument("--gamma", type=float, default=0.975)
     parser.add_argument("--save_dir", type=Path, default="training")
@@ -163,7 +164,7 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
             tf.summary.scalar("f1", val_metrics["f1"], step=epoch + 1)
 
         # Save best model
-        model.save(model_save_path / f"epoch-{epoch + 1}_p-{val_metrics['f1']}.keras")
+        model.save(model_save_path / f"epoch-{epoch + 1}_f-{val_metrics['f1']}.keras")
         if val_metrics["f1"] > best_val_f1:
             best_val_f1 = val_metrics["f1"]
             model.save(checkpoint_path)
@@ -192,22 +193,26 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
     concrete_func = model_inference.get_concrete_function()
     converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    # converter.representative_dataset = representative_data_gen
-    # converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8, tf.lite.OpsSet.TFLITE_BUILTINS]
-    # converter.target_spec.supported_types = [tf.float16]
-    # converter.inference_input_type = tf.int8
-    # converter.inference_output_type = tf.int8
-    converter.experimental_new_converter = True
+    converter.target_spec.supported_ops = [
+          tf.lite.OpsSet.TFLITE_BUILTINS,
+          tf.lite.OpsSet.SELECT_TF_OPS 
+     ]
+
+    converter.target_spec.supported_types = [tf.float32]
+    converter._experimental_lower_tensor_list_ops = False
+    converter.experimental_enable_resource_variables = False
     tflite_model = converter.convert()
 
-    with open(model_save_path / "best_model_int8.tflite", "wb") as f:
+    with open(model_save_path / f"H3-heads_{args.heads}-linformer_{args.linformer_dim}.tflite", "wb") as f:
         f.write(tflite_model)
 
 
 def main():
     args = parse_args()
-    model = Exlite(
+    model = Conv_Attn_Conv_Scaled(
+        n_heads=args.heads,
         hidden=args.hidden_layers,
+        linformer_dim=args.linformer_dim,
     )
 
     train_ds = create_tfrecord_dataset(args.base_dir / "train.tfrecord", batch_size=args.batch_size)

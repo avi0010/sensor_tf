@@ -18,6 +18,7 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
             num_layers: int = 1,
             dropout_rate: float = 0.1,
             max_length: int = 101,  # Added max_length parameter
+            linformer_dim: int = 64,
             **kwargs
     ):
         super().__init__(**kwargs)
@@ -31,26 +32,34 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
         # Temporal convolution
         self.temporal_conv = DepthwiseSeparableConv(filters=transformer_dim, kernel_size=7)
 
-        self.pos_encoding = LearnablePositionalEncoding(max_len=max_length, d_model=transformer_dim)
+        # self.pos_encoding = LearnablePositionalEncoding(max_len=max_length, d_model=transformer_dim)
+
+        # self.pos_encoding = tf.keras.layers.Embedding(
+        #     input_dim=max_length, 
+        #     output_dim=transformer_dim, 
+        #     trainable=True,
+        #     embeddings_initializer='uniform',
+        #     name='positional_encoding'
+        # )
 
         self.temporal_encoder = tfm.nlp.layers.TransformerEncoderBlock(
             num_attention_heads=n_heads,
+            num_kv_heads=1,
+            key_dim=transformer_dim,
+            value_dim=None,
             inner_dim=hidden,
             inner_activation='relu',
             output_dropout=dropout_rate,
             attention_dropout=dropout_rate,
+            inner_dropout=dropout_rate,
+            linformer_dim=linformer_dim,
             norm_first=True,
             norm_epsilon=1e-6,
-            inner_dropout=dropout_rate
+            use_rms_norm=True,
+            use_query_residual=True,
         )
 
         self.channel_attn = CBAM(channels=transformer_dim, kernel_size=3)
-
-        self.cross_attention = tfm.nlp.layers.MultiHeadAttention(
-            num_heads=n_heads,
-            key_dim=transformer_dim // n_heads,
-            dropout=dropout_rate
-        )
 
         scaler = load(open("StandardScaler.pkl", "rb"))
         mean = scaler.mean_.tolist()
@@ -73,6 +82,7 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
         ])
 
     def call(self, x, training=False):
+        seq_len = tf.shape(x)[1]
         batch_size = tf.shape(x)[0]
 
         # Normalize input
@@ -81,25 +91,18 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
         # Temporal convolution
         temporal_embed = self.temporal_conv(x)
 
+        # Channel Attention
+        channel_attention = self.channel_attn(temporal_embed, training=training)
+
         # Add positional encoding
-        temporal_features = self.pos_encoding(temporal_embed)
+        # positions = tf.range(seq_len)  # Create position indices
+        # pos_embeddings = self.pos_encoding(positions)  # Get positional embeddings
+        # temporal_features = channel_attention + pos_embeddings
 
-        temporal_features = self.temporal_encoder(temporal_features, training=training)
-
-        channel_attention = self.channel_attn(temporal_features)
-
-        channel_tokens = tf.reduce_mean(channel_attention, axis=1, keepdims=True)  # (B, 1, transformer_dim)
-
-        # Cross attention
-        cross_attn_out = self.cross_attention(
-            query=channel_tokens,
-            value=temporal_features,
-            key=temporal_features,
-            training=training
-        )
+        temporal_features = self.temporal_encoder(channel_attention, training=training)
 
         # Pool and generate output
-        pooled = tf.reduce_mean(cross_attn_out, axis=1)
+        pooled = tf.reduce_mean(temporal_features, axis=1)
         return self.output_mlp(pooled, training=training)
 
     def get_config(self):
@@ -129,21 +132,29 @@ if __name__ == "__main__":
 
     model = Conv_Attn_Conv_Scaled(
         input_dim=27,
-        n_heads=2,
+        n_heads=1,
         hidden=32,
         transformer_dim=16,
+        max_length=101,
     )
 
-    df = pd.read_excel("./data_generated/68B_6685_Q1_Ammonia_Liquid_1Rep_250102091107_data_03192025_102453.xlsx")
-
-    LENGTH = 101
-    for window in df.rolling(window=LENGTH):
-        if len(window) < LENGTH:
-            continue  # NOTE: Skip windows smaller than the required length.
-
-        X, y = window.drop(columns=["Exposure"]), window.Exposure.values[-1]
-        window_scaled = np.expand_dims(X, 0)
-        out = model(window_scaled)
-        break
-
+    dummpy_input = tf.random.uniform([batch_size, seq_length, input_dim])
+    out = model(dummpy_input)
+    print(out.shape)
     model.summary()
+
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter.target_spec.supported_ops = [
+          tf.lite.OpsSet.TFLITE_BUILTINS,
+          tf.lite.OpsSet.SELECT_TF_OPS 
+     ]
+    converter.target_spec.supported_types = [tf.float32]
+    converter._experimental_lower_tensor_list_ops = False
+    converter.experimental_enable_resource_variables = False
+    tflite_model = converter.convert()
+    output_path = "Hello_3.tflite"
+    with open(output_path, 'wb') as f:
+        f.write(tflite_model)
+
+    print(f"Model saved as {output_path}")
