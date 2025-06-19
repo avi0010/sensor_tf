@@ -1,11 +1,12 @@
 from pickle import load
 
 import tensorflow as tf
-import tensorflow_models as tfm
+# import tensorflow_models as tfm
 from tensorflow.keras import layers
 
 from sensors.models.modules import DepthwiseSeparableConv
 from sensors.models.modules import LearnablePositionalEncoding, CBAM
+from sensors.models.transformer_encoder import TransformerEncoderBlock
 
 
 @tf.keras.utils.register_keras_serializable()
@@ -42,7 +43,7 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
         #     name='positional_encoding'
         # )
 
-        self.temporal_encoder = tfm.nlp.layers.TransformerEncoderBlock(
+        self.temporal_encoder = TransformerEncoderBlock(
             num_attention_heads=n_heads,
             num_kv_heads=1,
             key_dim=transformer_dim,
@@ -132,7 +133,7 @@ if __name__ == "__main__":
 
     model = Conv_Attn_Conv_Scaled(
         input_dim=27,
-        n_heads=1,
+        n_heads=2,
         hidden=32,
         transformer_dim=16,
         max_length=101,
