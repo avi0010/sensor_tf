@@ -31,50 +31,45 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
         self.max_length = max_length
 
         # Temporal convolution
-        self.temporal_conv = DepthwiseSeparableConv(filters=transformer_dim, kernel_size=7)
+        #self.temporal_conv = DepthwiseSeparableConv(filters=transformer_dim, kernel_size=7)
 
-        # self.pos_encoding = LearnablePositionalEncoding(max_len=max_length, d_model=transformer_dim)
+        self.temporal_encoders = []
+        for i in range(num_layers):
+            self.temporal_encoders.append(
+                TransformerEncoderBlock(
+                    num_attention_heads=n_heads,
+                    # num_kv_heads=1,
+                    # key_dim=transformer_dim,
+                    # value_dim=transformer_dim,
+                    inner_dim=hidden,
+                    inner_activation='relu',
+                    output_dropout=dropout_rate,
+                    attention_dropout=dropout_rate,
+                    inner_dropout=dropout_rate,
+                    #linformer_dim=linformer_dim,
+                    norm_first=True,
+                    norm_epsilon=1e-6,
+                    use_rms_norm=True,
+                    use_query_residual=True,
+                    name=f'transformer_layer_{i}'
+                )
+            )
 
-        # self.pos_encoding = tf.keras.layers.Embedding(
-        #     input_dim=max_length, 
-        #     output_dim=transformer_dim, 
-        #     trainable=True,
-        #     embeddings_initializer='uniform',
-        #     name='positional_encoding'
-        # )
-
-        self.temporal_encoder = TransformerEncoderBlock(
-            num_attention_heads=n_heads,
-            num_kv_heads=1,
-            key_dim=transformer_dim,
-            value_dim=None,
-            inner_dim=hidden,
-            inner_activation='relu',
-            output_dropout=dropout_rate,
-            attention_dropout=dropout_rate,
-            inner_dropout=dropout_rate,
-            linformer_dim=linformer_dim,
-            norm_first=True,
-            norm_epsilon=1e-6,
-            use_rms_norm=True,
-            use_query_residual=True,
-        )
-
-        self.channel_attn = CBAM(channels=transformer_dim, kernel_size=3)
+                #self.channel_attn = CBAM(channels=27, kernel_size=7)
 
         scaler = load(open("StandardScaler.pkl", "rb"))
         mean = scaler.mean_.tolist()
         std = scaler.scale_
         variance = (std ** 2).tolist()
         self.normalizer = tf.keras.layers.Normalization(
-            mean=mean,
-            variance=variance,
-            axis=-1,
-            trainable=False
-        )
+                    mean=mean,
+                    variance=variance,
+                    axis=-1,
+                    trainable=False
+                )
         self.normalizer.build([None, 101, 27])
 
-        # Output MLP
+                # Output MLP
         self.output_mlp = tf.keras.Sequential([
             tf.keras.layers.Dense(hidden, activation=tf.nn.relu),
             tf.keras.layers.LayerNormalization(),
@@ -87,23 +82,19 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
         batch_size = tf.shape(x)[0]
 
         # Normalize input
-        x = self.normalizer(x)
+        temporal_features = self.normalizer(x)
 
         # Temporal convolution
-        temporal_embed = self.temporal_conv(x)
+        #temporal_embed = self.temporal_conv(x)
 
         # Channel Attention
-        channel_attention = self.channel_attn(temporal_embed, training=training)
+        #channel_attention = self.channel_attn(x, training=training)
 
-        # Add positional encoding
-        # positions = tf.range(seq_len)  # Create position indices
-        # pos_embeddings = self.pos_encoding(positions)  # Get positional embeddings
-        # temporal_features = channel_attention + pos_embeddings
-
-        temporal_features = self.temporal_encoder(channel_attention, training=training)
+        for encoder in self.temporal_encoders:
+            temporal_features = encoder(temporal_features, training=training)
 
         # Pool and generate output
-        pooled = tf.reduce_mean(temporal_features, axis=1)
+        pooled = tf.reduce_mean(temporal_features, axis=2)
         return self.output_mlp(pooled, training=training)
 
     def get_config(self):
@@ -132,11 +123,12 @@ if __name__ == "__main__":
     input_dim = 27
 
     model = Conv_Attn_Conv_Scaled(
-        input_dim=27,
-        n_heads=2,
+        n_heads=3,
         hidden=32,
-        transformer_dim=16,
+        transformer_dim=27,
         max_length=101,
+        num_layers=4
+        #linformer_dim=64,
     )
 
     dummpy_input = tf.random.uniform([batch_size, seq_length, input_dim])
@@ -154,7 +146,7 @@ if __name__ == "__main__":
     converter._experimental_lower_tensor_list_ops = False
     converter.experimental_enable_resource_variables = False
     tflite_model = converter.convert()
-    output_path = "Hello_3.tflite"
+    output_path = "Hello_4.tflite"
     with open(output_path, 'wb') as f:
         f.write(tflite_model)
 
