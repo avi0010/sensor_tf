@@ -8,6 +8,7 @@ from tqdm import trange, tqdm
 
 from sensors.models.H3 import Conv_Attn_Conv_Scaled
 from sensors.utils.dataset_tfRecord import create_tfrecord_dataset
+from sensors.utils.loss import focal_loss
 
 
 def parse_args():
@@ -32,8 +33,9 @@ def train_step(model, x_batch, y_batch, optimizer, metrics, pos_weight):
     with tf.GradientTape() as tape:
         logits = model(x_batch, training=True)
         logits = tf.squeeze(logits, axis=-1)
-        loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=pos_weight)
-        loss = tf.reduce_mean(loss)
+        loss = focal_loss(y_batch, logits, alpha=pos_weight, gamma=3.0) 
+        # loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=pos_weight)
+        # loss = tf.reduce_mean(loss)
 
     grads = tape.gradient(loss, model.trainable_weights)
     optimizer.apply_gradients(zip(grads, model.trainable_weights))
@@ -67,8 +69,9 @@ def train_one_epoch(model, train_ds, optimizer, pos_weight, train_ds_length):
 def val_step(model, x_batch, y_batch, metrics, pos_weight):
     logits = model(x_batch, training=False)
     logits = tf.squeeze(logits, axis=-1)
-    loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=pos_weight)
-    loss = tf.reduce_mean(loss)
+    loss = focal_loss(y_batch, logits, alpha=pos_weight, gamma=3.0) 
+    # loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=pos_weight)
+    # loss = tf.reduce_mean(loss)
 
     preds = tf.cast(tf.sigmoid(logits) > 0.5, tf.float32)
 
