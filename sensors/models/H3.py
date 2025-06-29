@@ -7,6 +7,7 @@ from tensorflow.keras import layers
 from sensors.models.modules import DepthwiseSeparableConv
 from sensors.models.modules import LearnablePositionalEncoding, CBAM
 from sensors.models.transformer_encoder import TransformerEncoderBlock
+from sensors.models.multihead_pooling import TFMCrossAttentionPooling
 
 
 @tf.keras.utils.register_keras_serializable()
@@ -46,7 +47,7 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
                     output_dropout=dropout_rate,
                     attention_dropout=dropout_rate,
                     inner_dropout=dropout_rate,
-                    #linformer_dim=linformer_dim,
+                    linformer_dim=linformer_dim,
                     norm_first=True,
                     norm_epsilon=1e-6,
                     use_rms_norm=True,
@@ -56,6 +57,13 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
             )
 
                 #self.channel_attn = CBAM(channels=27, kernel_size=7)
+
+        self.pooling = TFMCrossAttentionPooling(
+            num_heads=n_heads,
+            key_dim=hidden // n_heads,
+            num_query_tokens=4,  # Number of learnable queries
+            dropout=dropout_rate
+        )
 
         scaler = load(open("StandardScaler.pkl", "rb"))
         mean = scaler.mean_.tolist()
@@ -94,7 +102,8 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
             temporal_features = encoder(temporal_features, training=training)
 
         # Pool and generate output
-        pooled = tf.reduce_mean(temporal_features, axis=2)
+        # pooled = tf.reduce_mean(temporal_features, axis=1)
+        pooled, attention_weights = self.pooling(temporal_features, training=training)
         return self.output_mlp(pooled, training=training)
 
     def get_config(self):
@@ -118,7 +127,7 @@ if __name__ == "__main__":
     import numpy as np
 
     # Create test data
-    batch_size = 4
+    batch_size = 1
     seq_length = 101
     input_dim = 27
 
@@ -127,8 +136,8 @@ if __name__ == "__main__":
         hidden=32,
         transformer_dim=27,
         max_length=101,
-        num_layers=4
-        #linformer_dim=64,
+        num_layers=2,
+        linformer_dim=64,
     )
 
     dummpy_input = tf.random.uniform([batch_size, seq_length, input_dim])
