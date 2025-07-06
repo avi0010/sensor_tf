@@ -254,3 +254,71 @@ class CBAM(tf.keras.layers.Layer):
         out = out + residual
 
         return out
+
+@tf.keras.utils.register_keras_serializable()
+class RoPEEmbedding(tf.keras.layers.Layer):
+    """Rotary Position Embedding (RoPE) implementation."""
+    
+    def __init__(self, d_model, max_seq_len=101, base=10000, **kwargs):
+        super().__init__(**kwargs)
+        self.d_model = d_model
+        self.max_seq_len = max_seq_len
+        self.base = base
+        
+        # Precompute position encodings
+        self.pos_encoding = self._create_position_encoding()
+    
+    def _create_position_encoding(self):
+        """Create RoPE position encodings."""
+        # Create frequency matrix
+        inv_freq = 1.0 / (self.base ** (tf.range(0, self.d_model, 2, dtype=tf.float32) / self.d_model))
+        
+        # Create position indices
+        position = tf.range(self.max_seq_len, dtype=tf.float32)
+        
+        # Compute sinusoids
+        freqs = tf.einsum('i,j->ij', position, inv_freq)
+        
+        # Create cos and sin matrices
+        cos_encoding = tf.cos(freqs)
+        sin_encoding = tf.sin(freqs)
+        
+        return cos_encoding, sin_encoding
+    
+    def _rotate_half(self, x):
+        """Rotate half the hidden dims of the input."""
+        x1, x2 = tf.split(x, 2, axis=-1)
+        return tf.concat([-x2, x1], axis=-1)
+    
+    def call(self, x, seq_len=None):
+        """Apply RoPE to input tensor."""
+        if seq_len is None:
+            seq_len = tf.shape(x)[1]
+        
+        cos_encoding, sin_encoding = self.pos_encoding
+        
+        # Truncate to sequence length
+        cos_pos = cos_encoding[:seq_len, :]
+        sin_pos = sin_encoding[:seq_len, :]
+        
+        # Expand dimensions for broadcasting
+        cos_pos = cos_pos[None, :, None, :]  # [1, seq_len, 1, d_model//2]
+        sin_pos = sin_pos[None, :, None, :]  # [1, seq_len, 1, d_model//2]
+        
+        # Repeat for both halves of the features
+        cos_pos = tf.repeat(cos_pos, 2, axis=-1)  # [1, seq_len, 1, d_model]
+        sin_pos = tf.repeat(sin_pos, 2, axis=-1)  # [1, seq_len, 1, d_model]
+        
+        # Apply rotation
+        x_rotated = x * cos_pos + self._rotate_half(x) * sin_pos
+        
+        return x_rotated
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "d_model": self.d_model,
+            "max_seq_len": self.max_seq_len,
+            "base": self.base,
+        })
+        return config

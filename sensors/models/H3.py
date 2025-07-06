@@ -4,7 +4,7 @@ import tensorflow as tf
 # import tensorflow_models as tfm
 from tensorflow.keras import layers
 
-from sensors.models.modules import DepthwiseSeparableConv
+from sensors.models.modules import DepthwiseSeparableConv, RoPEEmbedding
 from sensors.models.modules import LearnablePositionalEncoding, CBAM
 from sensors.models.transformer_encoder import TransformerEncoderBlock
 from sensors.models.multihead_pooling import TFMCrossAttentionPooling
@@ -33,6 +33,13 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
 
         # Temporal convolution
         #self.temporal_conv = DepthwiseSeparableConv(filters=transformer_dim, kernel_size=7)
+
+        self.rope_embedding = RoPEEmbedding(
+            d_model=27,
+            max_seq_len=max_length,
+            base=10000,
+            name='rope_embedding'
+        )
 
         self.temporal_encoders = []
         for i in range(num_layers):
@@ -77,7 +84,7 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
                 )
         self.normalizer.build([None, 101, 27])
 
-                # Output MLP
+        # Output MLP
         self.output_mlp = tf.keras.Sequential([
             tf.keras.layers.Dense(hidden, activation=tf.nn.relu),
             tf.keras.layers.LayerNormalization(),
@@ -91,6 +98,8 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
 
         # Normalize input
         temporal_features = self.normalizer(x)
+
+        temporal_features = self.rope_embedding(temporal_features, seq_len=seq_len)
 
         # Temporal convolution
         #temporal_embed = self.temporal_conv(x)
@@ -126,6 +135,13 @@ if __name__ == "__main__":
     import pandas as pd
     import numpy as np
 
+    scaler = load(open("StandardScaler.pkl", "rb"))
+    mean = scaler.mean_.tolist()
+    std = scaler.scale_ ** 2
+
+    print(mean)
+    print(std)
+
     # Create test data
     batch_size = 1
     seq_length = 101
@@ -133,10 +149,10 @@ if __name__ == "__main__":
 
     model = Conv_Attn_Conv_Scaled(
         n_heads=3,
-        hidden=32,
-        transformer_dim=27,
+        hidden=128,
+        transformer_dim=16,
         max_length=101,
-        num_layers=2,
+        num_layers=1,
         linformer_dim=64,
     )
 
