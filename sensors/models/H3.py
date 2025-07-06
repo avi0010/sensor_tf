@@ -32,10 +32,15 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
         self.max_length = max_length
 
         # Temporal convolution
-        #self.temporal_conv = DepthwiseSeparableConv(filters=transformer_dim, kernel_size=7)
+        # self.temporal_conv = DepthwiseSeparableConv(filters=transformer_dim, kernel_size=7)
+        self.temporal_linear = tf.keras.layers.Dense(
+            transformer_dim, 
+            activation='relu',
+            name='temporal_linear'
+        )
 
         self.rope_embedding = RoPEEmbedding(
-            d_model=27,
+            d_model=16,
             max_seq_len=max_length,
             base=10000,
             name='rope_embedding'
@@ -99,10 +104,11 @@ class Conv_Attn_Conv_Scaled(tf.keras.Model):
         # Normalize input
         temporal_features = self.normalizer(x)
 
-        temporal_features = self.rope_embedding(temporal_features, seq_len=seq_len)
-
         # Temporal convolution
-        #temporal_embed = self.temporal_conv(x)
+        temporal_features = self.temporal_linear(temporal_features)
+        #temporal_features = self.temporal_conv(temporal_features)
+
+        temporal_features = self.rope_embedding(temporal_features, seq_len=seq_len)
 
         # Channel Attention
         #channel_attention = self.channel_attn(x, training=training)
@@ -139,17 +145,14 @@ if __name__ == "__main__":
     mean = scaler.mean_.tolist()
     std = scaler.scale_ ** 2
 
-    print(mean)
-    print(std)
-
     # Create test data
     batch_size = 1
     seq_length = 101
     input_dim = 27
 
     model = Conv_Attn_Conv_Scaled(
-        n_heads=3,
-        hidden=128,
+        n_heads=2,
+        hidden=64,
         transformer_dim=16,
         max_length=101,
         num_layers=1,

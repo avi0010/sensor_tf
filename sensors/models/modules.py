@@ -291,34 +291,28 @@ class RoPEEmbedding(tf.keras.layers.Layer):
         return tf.concat([-x2, x1], axis=-1)
     
     def call(self, x, seq_len=None):
-        """Apply RoPE to input tensor."""
-        if seq_len is None:
-            seq_len = tf.shape(x)[1]
-        
-        cos_encoding, sin_encoding = self.pos_encoding
-        
-        # Truncate to sequence length
-        cos_pos = cos_encoding[:seq_len, :]
-        sin_pos = sin_encoding[:seq_len, :]
-        
-        # Expand dimensions for broadcasting
-        cos_pos = cos_pos[None, :, None, :]  # [1, seq_len, 1, d_model//2]
-        sin_pos = sin_pos[None, :, None, :]  # [1, seq_len, 1, d_model//2]
-        
-        # Repeat for both halves of the features
-        cos_pos = tf.repeat(cos_pos, 2, axis=-1)  # [1, seq_len, 1, d_model]
-        sin_pos = tf.repeat(sin_pos, 2, axis=-1)  # [1, seq_len, 1, d_model]
-        
-        # Apply rotation
-        x_rotated = x * cos_pos + self._rotate_half(x) * sin_pos
-        
-        return x_rotated
-    
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            "d_model": self.d_model,
-            "max_seq_len": self.max_seq_len,
-            "base": self.base,
-        })
-        return config
+        cos_encoding, sin_encoding = self.pos_encoding  # [101, d_model//2]
+
+        # Interleave cos/sin to match d_model shape
+        # This avoids incorrect tf.repeat doubling
+        cos_pos = tf.stack([cos_encoding, cos_encoding], axis=-1)
+        sin_pos = tf.stack([sin_encoding, sin_encoding], axis=-1)
+
+        # Reshape to [101, d_model]
+        cos_pos = tf.reshape(cos_pos, [self.max_seq_len, self.d_model])
+        sin_pos = tf.reshape(sin_pos, [self.max_seq_len, self.d_model])
+
+        # Expand batch dimension
+        cos_pos = cos_pos[None, :, :]  # [1, 101, d_model]
+        sin_pos = sin_pos[None, :, :]  # [1, 101, d_model]
+
+        return x * cos_pos + self._rotate_half(x) * sin_pos
+
+        def get_config(self):
+            config = super().get_config()
+            config.update({
+                "d_model": self.d_model,
+                "max_seq_len": self.max_seq_len,
+                "base": self.base,
+            })
+            return config
