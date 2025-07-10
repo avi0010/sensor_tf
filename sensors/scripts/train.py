@@ -4,11 +4,13 @@ from pathlib import Path
 
 import tensorflow as tf
 import tf2onnx
-from tqdm import trange, tqdm
+from tqdm import tqdm, trange
 
 from sensors.models.H3 import Conv_Attn_Conv_Scaled
 from sensors.utils.dataset_tfRecord import create_tfrecord_dataset
 from sensors.utils.loss import focal_loss
+from sensors.utils.lr_scheduler import LinearWarmupCosineDecay
+from sensors.utils.pos_weight_scheduler import PosWeightDecaySchedule
 
 
 def parse_args():
@@ -33,9 +35,12 @@ def train_step(model, x_batch, y_batch, optimizer, metrics, pos_weight):
     with tf.GradientTape() as tape:
         logits = model(x_batch, training=True)
         logits = tf.squeeze(logits, axis=-1)
-        loss = focal_loss(y_batch, logits, alpha=pos_weight, gamma=3.0) 
-        # loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=pos_weight)
-        # loss = tf.reduce_mean(loss)
+        loss = tf.nn.weighted_cross_entropy_with_logits(
+            labels=y_batch,
+            logits=logits,
+            pos_weight=pos_weight,
+        )
+        loss = tf.reduce_mean(loss)
 
     grads = tape.gradient(loss, model.trainable_weights)
     optimizer.apply_gradients(zip(grads, model.trainable_weights))
@@ -69,9 +74,12 @@ def train_one_epoch(model, train_ds, optimizer, pos_weight, train_ds_length):
 def val_step(model, x_batch, y_batch, metrics, pos_weight):
     logits = model(x_batch, training=False)
     logits = tf.squeeze(logits, axis=-1)
-    loss = focal_loss(y_batch, logits, alpha=pos_weight, gamma=3.0) 
-    # loss = tf.nn.weighted_cross_entropy_with_logits(labels=y_batch, logits=logits, pos_weight=pos_weight)
-    # loss = tf.reduce_mean(loss)
+    loss = tf.nn.weighted_cross_entropy_with_logits(
+        labels=y_batch,
+        logits=logits,
+        pos_weight=pos_weight,
+    )
+    loss = tf.reduce_mean(loss)
 
     preds = tf.cast(tf.sigmoid(logits) > 0.5, tf.float32)
 
@@ -115,7 +123,7 @@ def calculate_epoch_metrics(metrics):
         "accuracy": metrics["accuracy"].result().numpy(),
         "precision": precision.numpy(),
         "recall": recall.numpy(),
-        "f1": f1.numpy()
+        "f1": f1.numpy(),
     }
 
 
@@ -129,27 +137,56 @@ def create_metrics():
     }
 
 
-def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Dataset, args):
+def train(
+    model: tf.keras.Model,
+    train_ds: tf.data.Dataset,
+    val_ds: tf.data.Dataset,
+    args,
+):
     model_save_path = Path(args.save_dir) / str(uuid.uuid4())
 
-    train_writer = tf.summary.create_file_writer(str(model_save_path / "results" / "train"))
+    train_writer = tf.summary.create_file_writer(
+        str(model_save_path / "results" / "train")
+    )
     val_writer = tf.summary.create_file_writer(str(model_save_path / "results" / "val"))
 
     train_ds_length = sum(1 for _ in train_ds)
-    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=args.learning_rate,
-        decay_steps=train_ds_length,
-        decay_rate=args.gamma,
-        staircase=True,
+
+    lr_schedule = LinearWarmupCosineDecay(
+        max_lr=args.learning_rate,
+        warmup_steps=10,
+        total_steps=args.epochs,
+        min_lr=0,
     )
-    optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
+
+    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr_schedule)
+
+    # Create pos_weight decay schedule
+    pos_weight_schedule = PosWeightDecaySchedule(
+        initial_pos_weight=args.pos_weight,
+        min_pos_weight=0,
+        total_epochs=args.epochs,
+        decay_rate=0.9,
+    )
 
     checkpoint_path = model_save_path / "best_model.keras"
 
     best_val_f1 = 0.0
     for epoch in trange(args.epochs):
-        train_metrics = train_one_epoch(model, train_ds, optimizer, args.pos_weight, train_ds_length)
-        val_metrics = validate_one_epoch(model, val_ds, args.pos_weight)
+        current_pos_weight = pos_weight_schedule(epoch)
+
+        train_metrics = train_one_epoch(
+            model,
+            train_ds,
+            optimizer,
+            current_pos_weight,
+            train_ds_length,
+        )
+        val_metrics = validate_one_epoch(
+            model,
+            val_ds,
+            current_pos_weight,
+        )
 
         # Logging
         with train_writer.as_default():
@@ -177,18 +214,23 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
     _ = best_model(dummy_input)
 
     # onnx save
-    input_signature = [tf.TensorSpec([1, 101, 27], tf.float32, name='x')]
+    input_signature = [tf.TensorSpec([1, 101, 27], tf.float32, name="x")]
 
     @tf.function(input_signature=input_signature)
     def model_inference(x):
         return best_model(x)
 
-    onnx_model, _ = tf2onnx.convert.from_function(model_inference, input_signature=input_signature, opset=16,
-                                                  output_path=str(model_save_path / "best_model.onnx"))
-
+    onnx_model, _ = tf2onnx.convert.from_function(
+        model_inference,
+        input_signature=input_signature,
+        opset=16,
+        output_path=str(model_save_path / "best_model.onnx"),
+    )
 
     def representative_data_gen():
-        temp_ds = create_tfrecord_dataset(args.base_dir / "train.tfrecord", 1, shuffle=False)
+        temp_ds = create_tfrecord_dataset(
+            args.base_dir / "train.tfrecord", 1, shuffle=False
+        )
         for x_batch, _ in temp_ds:
             yield [x_batch]
 
@@ -197,16 +239,20 @@ def train(model: tf.keras.Model, train_ds: tf.data.Dataset, val_ds: tf.data.Data
     converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.target_spec.supported_ops = [
-          tf.lite.OpsSet.TFLITE_BUILTINS,
-          tf.lite.OpsSet.SELECT_TF_OPS 
-     ]
+        tf.lite.OpsSet.TFLITE_BUILTINS,
+        tf.lite.OpsSet.SELECT_TF_OPS,
+    ]
 
     converter.target_spec.supported_types = [tf.float32]
     converter._experimental_lower_tensor_list_ops = False
     converter.experimental_enable_resource_variables = False
     tflite_model = converter.convert()
 
-    with open(model_save_path / f"H3-heads_{args.heads}-linformer_{args.linformer_dim}.tflite", "wb") as f:
+    with open(
+        model_save_path
+        / f"H3-heads_{args.heads}-linformer_{args.linformer_dim}.tflite",
+        "wb",
+    ) as f:
         f.write(tflite_model)
 
 
@@ -218,9 +264,13 @@ def main():
         linformer_dim=args.linformer_dim,
     )
 
-    train_ds = create_tfrecord_dataset(args.base_dir / "train.tfrecord", batch_size=args.batch_size)
+    train_ds = create_tfrecord_dataset(
+        args.base_dir / "train.tfrecord", batch_size=args.batch_size
+    )
 
-    val_ds = create_tfrecord_dataset(args.base_dir / "val.tfrecord", batch_size=args.batch_size, shuffle=False)
+    val_ds = create_tfrecord_dataset(
+        args.base_dir / "val.tfrecord", batch_size=args.batch_size, shuffle=False
+    )
 
     train(model, train_ds, val_ds, args)
 
