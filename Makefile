@@ -17,13 +17,23 @@ $(DATA_PROCESSED): $(DATA_GENERATED)
 # Rule to train the model with specific parameters
 train: $(DATA_PROCESSED)
 	python3 -m sensors.scripts.train \
-		--learning_rate 0.0001 \
-		--feature_length 27 \
-		--epochs 50 \
-		--threshold 0.5 \
-		--hidden_layers 32 \
-		--pos_weight 0.1 \
-		--batch_size 1024 \
-		--heads 2 \
-		--linformer_dim 64\
-		--gamma 0.975
+        --learning_rate 0.0005 \
+        --feature_length 27 \
+        --epochs 50 \
+        --threshold 0.5 \
+        --hidden_layers 128 \
+        --pos_weight 0.01 \
+        --batch_size 1024 \
+        --heads 3 \
+        --linformer_dim 64\
+        --gamma 0.975
+
+classification: $(DATA_PROCESSED)
+	python3 -m sensors.scripts.train_classification \
+        --learning_rate 0.0005 \
+        --epochs 10 \
+        --hidden_layers 64 \
+        --batch_size 1024 \
+        --heads 2 \
+        --linformer_dim 64 \
+        --gamma 0.975

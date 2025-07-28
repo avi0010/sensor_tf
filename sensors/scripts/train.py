@@ -9,7 +9,7 @@ from tqdm import tqdm, trange
 from sensors.models.H3 import Conv_Attn_Conv_Scaled
 from sensors.utils.dataset_tfRecord import create_tfrecord_dataset
 from sensors.utils.loss import focal_loss
-from sensors.utils.lr_scheduler import LinearWarmupCosineDecay
+from sensors.utils.lr_scheduler import LinearWarmupExponentialDecay
 from sensors.utils.pos_weight_scheduler import PosWeightDecaySchedule
 
 
@@ -152,12 +152,11 @@ def train(
 
     train_ds_length = sum(1 for _ in train_ds)
 
-    lr_schedule = LinearWarmupCosineDecay(
+    lr_schedule = LinearWarmupExponentialDecay(
         max_lr=args.learning_rate,
         warmup_steps=10,
         total_steps=args.epochs,
-        min_lr=0,
-    )
+        gamma=args.gamma,)
 
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr_schedule)
 

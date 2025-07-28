@@ -24,5 +24,5 @@ def create_tfrecord_dataset(tfRecord_file: Path, batch_size: int = 64, shuffle: 
     parsed_dataset = raw_dataset.map(parse_tfrecord_fn)
 
     if shuffle:
-        parsed_dataset = parsed_dataset.shuffle(buffer_size=10000)
+        parsed_dataset = parsed_dataset.shuffle(buffer_size=100000)
     return parsed_dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)

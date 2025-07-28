@@ -41,3 +41,5 @@ LENGTH = 101
 DATA_GENERATED_DIR = "data_generated"
 
 DATA_PROCESSED_DIR = "data_processed"
+
+CLASSIFICATION_MODEL_OUTPUTS = ["NO_GAS", "H2S", "HCN", "NH3", "PH3", "TDG", "Cl2"]
