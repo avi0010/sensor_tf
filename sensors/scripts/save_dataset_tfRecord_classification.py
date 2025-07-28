@@ -24,7 +24,7 @@ def extract_gas_from_filename(file_name, file_contains_gas: bool):
         if gas in file_name:
             return idx
 
-    raise ValueError("No gas found in filename")
+    raise ValueError(f"No gas found in filename: {file_name}")
 
 
 def save_to_tfrecord(file_path: Path, tfrecord_writer: tf.io.TFRecordWriter):
