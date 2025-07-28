@@ -1,4 +1,3 @@
-from itertools import islice
 from pathlib import Path
 
 import numpy as np
@@ -55,12 +54,8 @@ def save_to_tfrecord(file_path: Path, tfrecord_writer: tf.io.TFRecordWriter):
 
 def process_split(split_dir: Path, tfrecord_file: Path):
     with tf.io.TFRecordWriter(str(tfrecord_file)) as writer:
-        save_to_tfrecord(Path("data_generated/68A_6685_Q1_NH3_50ppm_Response_1Rep_Outlet_connected_directly_to_Active_Unit_Pump_Inlet_250205091019_data_03112025_021447.xlsx"), writer)
-        save_to_tfrecord(Path("data_generated/68A_6685_Q1_Cl2_1ppm_Response_1Rep_Active_Unit_w_Cover_no_sorbent_Smaller_Chamber_Bronkhorst_Setup_RH_21.3_T_22.1_200926115033_data_03112025_012834.xlsx"), writer)
-        save_to_tfrecord(Path("data_generated/68A_6685_Q1_H2S_10ppm_Response_1Rep_Active_Unit_w_Cover_no_sorbent_Smaller_Chamber_Bronkhorst_Setup_RH_19.7_T_24.1_241010121613_data_03112025_012922.xlsx"), writer)
-        save_to_tfrecord(Path("data_generated/68A_6685_Q1_HCN_50ppm_Response_1Rep_Active_Unit_w_Cover_no_sorbent_Smaller_Chamber_Bronkhorst_Setup_RH_19.3_T_22.9_241002134636_data_11072024_081414.xlsx"), writer)
-        # for file_path in tqdm(islice(split_dir.iterdir(), 1)):
-        #     save_to_tfrecord(file_path, writer)
+        for file_path in tqdm(split_dir.iterdir()):
+            save_to_tfrecord(file_path, writer)
 
 
 def main():
