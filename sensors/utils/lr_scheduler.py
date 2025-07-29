@@ -1,20 +1,19 @@
-import math
-
 import tensorflow as tf
 
 
 class LinearWarmupExponentialDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __init__(
-        self,
-        max_lr: float,
-        warmup_epochs: int,
-        total_epochs: int,
-        steps_per_epoch: int,
-        gamma: float = 0.975,
+            self,
+            max_lr: float,
+            warmup_epochs: int,
+            total_epochs: int,
+            steps_per_epoch: int,
+            gamma: float = 0.975,
     ):
         super(LinearWarmupExponentialDecay, self).__init__()
         self.max_lr = max_lr
         self.warmup_steps = int(warmup_epochs * steps_per_epoch)
+        self.steps_per_epoch = steps_per_epoch
         self.total_steps = total_epochs * steps_per_epoch
         self.gamma = gamma
 
@@ -24,7 +23,8 @@ class LinearWarmupExponentialDecay(tf.keras.optimizers.schedules.LearningRateSch
         # Linear warmup phase
         warmup_lr = self.max_lr * step / self.warmup_steps
 
-        exponential_lr = self.max_lr * self.gamma**(step - self.warmup_steps)
+        epochs_after_warmup = (step - self.warmup_steps) / self.steps_per_epoch
+        exponential_lr = self.max_lr * self.gamma ** epochs_after_warmup
 
         # Choose between warmup and cosine based on current step
         return tf.cond(
