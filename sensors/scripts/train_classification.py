@@ -247,6 +247,7 @@ def train(
             tf.summary.scalar("macro_precision", train_metrics["macro_precision"], step=epoch + 1)
             tf.summary.scalar("macro_recall", train_metrics["macro_recall"], step=epoch + 1)
             tf.summary.scalar("macro_f1", train_metrics["macro_f1"], step=epoch + 1)
+            tf.summary.scalar("learning_rate", optimizer.learning_rate.numpy(), step=epoch + 1)
 
             for class_idx in range(len(CLASSIFICATION_MODEL_OUTPUTS)):
                 gas_id = CLASSIFICATION_MODEL_OUTPUTS[class_idx]
