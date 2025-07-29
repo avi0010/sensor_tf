@@ -198,8 +198,9 @@ def train(
 
     lr_schedule = LinearWarmupExponentialDecay(
         max_lr=args.learning_rate,
-        warmup_steps=10,
-        total_steps=args.epochs,
+        warmup_epochs=10,
+        total_epochs=args.epochs,
+        steps_per_epoch=train_ds_length,
         gamma=args.gamma,
     )
 
