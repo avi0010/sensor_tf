@@ -11,6 +11,7 @@ from sensors.config import CLASSIFICATION_MODEL_OUTPUTS
 from sensors.models.H3_classification import LinformerClassifier
 from sensors.utils.dataset_tfRecord import create_tfrecord_dataset
 from sensors.utils.lr_scheduler import LinearWarmupExponentialDecay
+from sensors.utils.plotting import save_confusion_matrix_png
 
 
 def parse_args():
@@ -104,7 +105,7 @@ def val_step(model, x_batch, y_batch, metrics, class_weights=None):
     return preds
 
 
-def validate_one_epoch(model, val_ds, class_weights):
+def validate_one_epoch(model, val_ds, class_weights, model_save_path, epoch):
     metrics = create_metrics()
 
     # Collect all predictions and labels for confusion matrix
@@ -124,6 +125,10 @@ def validate_one_epoch(model, val_ds, class_weights):
     confusion_matrix = tf.math.confusion_matrix(
         y_true_concat, y_pred_concat, num_classes=len(CLASSIFICATION_MODEL_OUTPUTS)
     ).numpy()
+
+    confusion_matrix_path = model_save_path / 'confusion_matrix'
+    confusion_matrix_path.mkdir(parents=True, exist_ok=True)
+    save_confusion_matrix_png(confusion_matrix, epoch, confusion_matrix_path, "val", CLASSIFICATION_MODEL_OUTPUTS)
 
     return calculate_epoch_metrics(metrics, confusion_matrix)
 
@@ -231,6 +236,8 @@ def train(
             model,
             val_ds,
             class_weights,
+            model_save_path,
+            epoch,
         )
 
         # Logging
