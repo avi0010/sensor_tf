@@ -1,7 +1,6 @@
 from pickle import load
 
 import tensorflow as tf
-
 from sensors.models.multihead_pooling import TFMCrossAttentionPooling
 from sensors.models.transformer_encoder import TransformerEncoderBlock
 
@@ -9,16 +8,16 @@ from sensors.models.transformer_encoder import TransformerEncoderBlock
 @tf.keras.utils.register_keras_serializable()
 class LinformerClassifier(tf.keras.Model):
     def __init__(
-            self,
-            num_classes: int,  # Number of classes for classification
-            n_heads: int = 2,
-            hidden: int = 64,
-            transformer_dim: int = 16,
-            num_layers: int = 1,
-            dropout_rate: float = 0.1,
-            max_length: int = 101,
-            linformer_dim: int = 64,
-            **kwargs,
+        self,
+        num_classes: int,  # Number of classes for classification
+        n_heads: int = 2,
+        hidden: int = 64,
+        transformer_dim: int = 16,
+        num_layers: int = 1,
+        dropout_rate: float = 0.1,
+        max_length: int = 101,
+        linformer_dim: int = 64,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.num_classes = num_classes
@@ -59,7 +58,7 @@ class LinformerClassifier(tf.keras.Model):
         self.pooling = TFMCrossAttentionPooling(
             num_heads=n_heads,
             key_dim=transformer_dim,
-            num_query_tokens=8,  # More query tokens for richer representation
+            num_query_tokens=num_classes,
             dropout=dropout_rate,
         )
 
@@ -67,7 +66,7 @@ class LinformerClassifier(tf.keras.Model):
         scaler = load(open("StandardScaler.pkl", "rb"))
         mean = scaler.mean_.tolist()
         std = scaler.scale_
-        variance = (std ** 2).tolist()
+        variance = (std**2).tolist()
         self.normalizer = tf.keras.layers.Normalization(
             mean=mean, variance=variance, axis=-1, trainable=False
         )
@@ -84,12 +83,7 @@ class LinformerClassifier(tf.keras.Model):
                 tf.keras.layers.Dropout(dropout_rate * 0.5),
                 tf.keras.layers.Dense(hidden // 2, activation="relu"),
                 tf.keras.layers.Dropout(dropout_rate * 0.5),
-                # Final classification layer
-                tf.keras.layers.Dense(
-                    num_classes,
-                    activation="softmax",
-                    name="classification_output",
-                ),
+                tf.keras.layers.Dense(1),
             ]
         )
 
@@ -111,9 +105,10 @@ class LinformerClassifier(tf.keras.Model):
         pooled = self.pooling(temporal_features, training=training)
 
         # Main classification output
-        main_output = self.classification_head(pooled, training=training)
+        logits = self.classification_head(pooled, training=training)
+        logits = tf.squeeze(logits, axis=-1)
 
-        return main_output
+        return tf.nn.softmax(logits, axis=-1)
 
     def get_config(self):
         config = super().get_config()
@@ -153,7 +148,7 @@ if __name__ == "__main__":
 
     dummpy_input = tf.random.uniform([batch_size, seq_length, input_dim])
     out = model(dummpy_input)
-    print(out.shape)
+    print(out)
     model.summary()
 
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
