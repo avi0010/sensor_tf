@@ -72,6 +72,9 @@ class TFMCrossAttentionPooling(tf.keras.layers.Layer):
         processed_output = self.mlp(attended_output, training=training)
 
         # Pool the query tokens (you can use mean, max, or learned pooling)
-        pooled = tf.reduce_mean(processed_output, axis=1)  # (batch_size, feature_dim)
+        average_pooling = tf.reduce_mean(processed_output, axis=1)  # (batch_size, feature_dim)
+        max_pooling = tf.reduce_max(processed_output, axis=1) # (batch_size, feature_dim)
 
-        return pooled
+        combined = tf.concat([average_pooling, max_pooling], axis=-1)
+
+        return combined
