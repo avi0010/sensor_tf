@@ -36,12 +36,20 @@ def train_step(model, x_batch, y_batch, optimizer, metrics, class_weights=None):
 
         if class_weights is not None:
             sample_weights = tf.gather(class_weights, y_batch)
-            y_batch = tf.one_hot(tf.cast(y_batch, tf.int32), len(CLASSIFICATION_MODEL_OUTPUTS))
-            loss = tf.keras.losses.categorical_crossentropy(y_true=y_batch, y_pred=logits, label_smoothing=0.05)
+            y_batch = tf.one_hot(
+                tf.cast(y_batch, tf.int32), len(CLASSIFICATION_MODEL_OUTPUTS)
+            )
+            loss = tf.keras.losses.categorical_crossentropy(
+                y_true=y_batch, y_pred=logits, label_smoothing=0.05
+            )
             loss = loss * sample_weights
         else:
-            y_batch = tf.one_hot(tf.cast(y_batch, tf.int32), len(CLASSIFICATION_MODEL_OUTPUTS))
-            loss = tf.keras.losses.categorical_crossentropy(y_true=y_batch, y_pred=logits, label_smoothing=0.05)
+            y_batch = tf.one_hot(
+                tf.cast(y_batch, tf.int32), len(CLASSIFICATION_MODEL_OUTPUTS)
+            )
+            loss = tf.keras.losses.categorical_crossentropy(
+                y_true=y_batch, y_pred=logits, label_smoothing=0.05
+            )
 
         loss = tf.reduce_mean(loss)
 
@@ -66,7 +74,9 @@ def train_one_epoch(model, train_ds, optimizer, class_weights, train_ds_length):
     all_y_pred = []
 
     for x_batch, y_batch in tqdm(train_ds, leave=False, total=train_ds_length):
-        y_batch = tf.cast(y_batch, tf.int32)  # Labels should be integers for multi-class
+        y_batch = tf.cast(
+            y_batch, tf.int32
+        )  # Labels should be integers for multi-class
         preds = train_step(model, x_batch, y_batch, optimizer, metrics, class_weights)
 
         # Collect for confusion matrix
@@ -88,12 +98,20 @@ def val_step(model, x_batch, y_batch, metrics, class_weights=None):
 
     if class_weights is not None:
         sample_weights = tf.gather(class_weights, y_batch)
-        y_batch = tf.one_hot(tf.cast(y_batch, tf.int32), len(CLASSIFICATION_MODEL_OUTPUTS))
-        loss = tf.keras.losses.categorical_crossentropy(y_true=y_batch, y_pred=logits, label_smoothing=0.05)
+        y_batch = tf.one_hot(
+            tf.cast(y_batch, tf.int32), len(CLASSIFICATION_MODEL_OUTPUTS)
+        )
+        loss = tf.keras.losses.categorical_crossentropy(
+            y_true=y_batch, y_pred=logits, label_smoothing=0.05
+        )
         loss = loss * sample_weights
     else:
-        y_batch = tf.one_hot(tf.cast(y_batch, tf.int32), len(CLASSIFICATION_MODEL_OUTPUTS))
-        loss = tf.keras.losses.categorical_crossentropy(y_true=y_batch, y_pred=logits, label_smoothing=0.05)
+        y_batch = tf.one_hot(
+            tf.cast(y_batch, tf.int32), len(CLASSIFICATION_MODEL_OUTPUTS)
+        )
+        loss = tf.keras.losses.categorical_crossentropy(
+            y_true=y_batch, y_pred=logits, label_smoothing=0.05
+        )
 
     loss = tf.reduce_mean(loss)
     preds = tf.argmax(logits, axis=-1)
@@ -126,9 +144,15 @@ def validate_one_epoch(model, val_ds, class_weights, model_save_path, epoch):
         y_true_concat, y_pred_concat, num_classes=len(CLASSIFICATION_MODEL_OUTPUTS)
     ).numpy()
 
-    confusion_matrix_path = model_save_path / 'confusion_matrix'
+    confusion_matrix_path = model_save_path / "confusion_matrix"
     confusion_matrix_path.mkdir(parents=True, exist_ok=True)
-    save_confusion_matrix_png(confusion_matrix, epoch, confusion_matrix_path, "val", CLASSIFICATION_MODEL_OUTPUTS)
+    save_confusion_matrix_png(
+        confusion_matrix,
+        epoch,
+        confusion_matrix_path,
+        "val",
+        CLASSIFICATION_MODEL_OUTPUTS,
+    )
 
     return calculate_epoch_metrics(metrics, confusion_matrix)
 
@@ -198,7 +222,7 @@ def train(
 
     train_ds_length = sum(1 for _ in train_ds)
 
-    with open(args_file_path, 'w') as f:
+    with open(args_file_path, "w") as f:
         json.dump(args_dict, f, indent=4, default=str)
 
     lr_schedule = LinearWarmupExponentialDecay(
@@ -218,7 +242,6 @@ def train(
 
     best_val_f1 = 0.0
     for epoch in trange(args.epochs):
-
         if args.class_weights:
             weights = [float(w) for w in args.class_weights.split(",")]
             weights[0] *= 1.1 ** epoch
@@ -244,40 +267,70 @@ def train(
         with train_writer.as_default():
             tf.summary.scalar("loss", train_metrics["loss"], step=epoch + 1)
             tf.summary.scalar("accuracy", train_metrics["accuracy"], step=epoch + 1)
-            tf.summary.scalar("macro_precision", train_metrics["macro_precision"], step=epoch + 1)
-            tf.summary.scalar("macro_recall", train_metrics["macro_recall"], step=epoch + 1)
+            tf.summary.scalar(
+                "macro_precision", train_metrics["macro_precision"], step=epoch + 1
+            )
+            tf.summary.scalar(
+                "macro_recall", train_metrics["macro_recall"], step=epoch + 1
+            )
             tf.summary.scalar("macro_f1", train_metrics["macro_f1"], step=epoch + 1)
-            tf.summary.scalar("learning_rate", optimizer.learning_rate.numpy(), step=epoch + 1)
+            tf.summary.scalar(
+                "learning_rate", optimizer.learning_rate.numpy(), step=epoch + 1
+            )
 
             for class_idx in range(len(CLASSIFICATION_MODEL_OUTPUTS)):
                 gas_id = CLASSIFICATION_MODEL_OUTPUTS[class_idx]
                 with tf.summary.create_file_writer(
-                        str(model_save_path / "results" / "train" / f"gas_{gas_id}")).as_default():
-                    tf.summary.scalar(f"precision", train_metrics["per_class_precision"][class_idx],
-                                      step=epoch + 1)
-                    tf.summary.scalar(f"recall", train_metrics["per_class_recall"][class_idx],
-                                      step=epoch + 1)
-                    tf.summary.scalar(f"f1", train_metrics["per_class_f1"][class_idx], step=epoch + 1)
+                        str(model_save_path / "results" / "train" / f"gas_{gas_id}")
+                ).as_default():
+                    tf.summary.scalar(
+                        f"precision",
+                        train_metrics["per_class_precision"][class_idx],
+                        step=epoch + 1,
+                    )
+                    tf.summary.scalar(
+                        f"recall",
+                        train_metrics["per_class_recall"][class_idx],
+                        step=epoch + 1,
+                    )
+                    tf.summary.scalar(
+                        f"f1", train_metrics["per_class_f1"][class_idx], step=epoch + 1
+                    )
 
         with val_writer.as_default():
             tf.summary.scalar("loss", val_metrics["loss"], step=epoch + 1)
             tf.summary.scalar("accuracy", val_metrics["accuracy"], step=epoch + 1)
-            tf.summary.scalar("macro_precision", val_metrics["macro_precision"], step=epoch + 1)
-            tf.summary.scalar("macro_recall", val_metrics["macro_recall"], step=epoch + 1)
+            tf.summary.scalar(
+                "macro_precision", val_metrics["macro_precision"], step=epoch + 1
+            )
+            tf.summary.scalar(
+                "macro_recall", val_metrics["macro_recall"], step=epoch + 1
+            )
             tf.summary.scalar("macro_f1", val_metrics["macro_f1"], step=epoch + 1)
 
             for class_idx in range(len(CLASSIFICATION_MODEL_OUTPUTS)):
                 gas_id = CLASSIFICATION_MODEL_OUTPUTS[class_idx]
                 with tf.summary.create_file_writer(
-                        str(model_save_path / "results" / "val" / f"gas_{gas_id}")).as_default():
-                    tf.summary.scalar(f"precision", train_metrics["per_class_precision"][class_idx],
-                                      step=epoch + 1)
-                    tf.summary.scalar(f"recall", train_metrics["per_class_recall"][class_idx],
-                                      step=epoch + 1)
-                    tf.summary.scalar(f"f1", train_metrics["per_class_f1"][class_idx], step=epoch + 1)
+                        str(model_save_path / "results" / "val" / f"gas_{gas_id}")
+                ).as_default():
+                    tf.summary.scalar(
+                        f"precision",
+                        val_metrics["per_class_precision"][class_idx],
+                        step=epoch + 1,
+                    )
+                    tf.summary.scalar(
+                        f"recall",
+                        val_metrics["per_class_recall"][class_idx],
+                        step=epoch + 1,
+                    )
+                    tf.summary.scalar(
+                        f"f1", val_metrics["per_class_f1"][class_idx], step=epoch + 1
+                    )
 
         # Save best model based on macro F1
-        model.save(model_save_path / f"epoch-{epoch + 1}_f-{val_metrics['macro_f1']}.keras")
+        model.save(
+            model_save_path / f"epoch-{epoch + 1}_f-{val_metrics['macro_f1']}.keras"
+        )
         if val_metrics["macro_f1"] > best_val_f1:
             best_val_f1 = val_metrics["macro_f1"]
             model.save(checkpoint_path)
@@ -323,7 +376,7 @@ def main():
         n_heads=args.heads,
         hidden=args.hidden_layers,
         linformer_dim=args.linformer_dim,
-        num_classes=len(CLASSIFICATION_MODEL_OUTPUTS)
+        num_classes=len(CLASSIFICATION_MODEL_OUTPUTS),
     )
 
     train_ds = create_tfrecord_dataset(
