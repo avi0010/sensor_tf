@@ -1,18 +1,19 @@
 import tensorflow as tf
 import tensorflow_models as tfm
+from tensorflow.keras.layers import LeakyReLU
 
 
 class TFMCrossAttentionPooling(tf.keras.layers.Layer):
     """Cross-attention pooling with learned query tokens"""
 
     def __init__(
-        self,
-        num_heads: int,
-        key_dim: int,
-        num_query_tokens: int = 8,
-        value_dim: int = None,
-        dropout: float = 0.0,
-        **kwargs,
+            self,
+            num_heads: int,
+            key_dim: int,
+            num_query_tokens: int = 8,
+            value_dim: int = None,
+            dropout: float = 0.0,
+            **kwargs,
     ):
         super().__init__(**kwargs)
         self.num_heads = num_heads
@@ -34,7 +35,7 @@ class TFMCrossAttentionPooling(tf.keras.layers.Layer):
         self.layer_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
         self.mlp = tf.keras.Sequential(
             [
-                tf.keras.layers.Dense(key_dim * 2, activation="relu"),
+                tf.keras.layers.Dense(key_dim * 2, activation=LeakyReLU(alpha=0.01)),
                 tf.keras.layers.Dropout(dropout),
                 tf.keras.layers.Dense(key_dim),
             ]
@@ -73,7 +74,7 @@ class TFMCrossAttentionPooling(tf.keras.layers.Layer):
 
         # Pool the query tokens (you can use mean, max, or learned pooling)
         average_pooling = tf.reduce_mean(processed_output, axis=1)  # (batch_size, feature_dim)
-        max_pooling = tf.reduce_max(processed_output, axis=1) # (batch_size, feature_dim)
+        max_pooling = tf.reduce_max(processed_output, axis=1)  # (batch_size, feature_dim)
 
         combined = tf.concat([average_pooling, max_pooling], axis=-1)
 
