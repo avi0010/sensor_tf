@@ -35,7 +35,7 @@ class TFMCrossAttentionPooling(tf.keras.layers.Layer):
         self.layer_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
         self.mlp = tf.keras.Sequential(
             [
-                tf.keras.layers.Dense(key_dim * 2, activation=LeakyReLU(alpha=0.01)),
+                tf.keras.layers.Dense(key_dim * 2, activation=LeakyReLU(alpha=0.1)),
                 tf.keras.layers.Dropout(dropout),
                 tf.keras.layers.Dense(key_dim),
             ]

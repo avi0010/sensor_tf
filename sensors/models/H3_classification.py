@@ -32,7 +32,7 @@ class LinformerClassifier(tf.keras.Model):
 
         # Enhanced input processing
         self.input_projection = tf.keras.layers.Dense(
-            transformer_dim, activation=LeakyReLU(alpha=0.01), name="input_projection"
+            transformer_dim, activation=LeakyReLU(alpha=0.1), name="input_projection"
         )
 
         # Enhanced transformer encoders with residual connections
@@ -43,7 +43,7 @@ class LinformerClassifier(tf.keras.Model):
                     num_attention_heads=n_heads,
                     # num_kv_heads=n_heads,
                     inner_dim=hidden,
-                    inner_activation=LeakyReLU(alpha=0.01),
+                    inner_activation=LeakyReLU(alpha=0.1),
                     output_dropout=dropout_rate,
                     attention_dropout=dropout_rate,
                     inner_dropout=dropout_rate,
@@ -77,13 +77,13 @@ class LinformerClassifier(tf.keras.Model):
         # Enhanced classification head
         self.classification_head = tf.keras.Sequential(
             [
-                tf.keras.layers.Dense(hidden * 2, activation=LeakyReLU(alpha=0.01)),
+                tf.keras.layers.Dense(hidden * 2, activation=LeakyReLU(alpha=0.1)),
                 tf.keras.layers.LayerNormalization(),
                 tf.keras.layers.Dropout(dropout_rate),
-                tf.keras.layers.Dense(hidden, activation=LeakyReLU(alpha=0.01)),
+                tf.keras.layers.Dense(hidden, activation=LeakyReLU(alpha=0.1)),
                 tf.keras.layers.LayerNormalization(),
                 tf.keras.layers.Dropout(dropout_rate * 0.5),
-                tf.keras.layers.Dense(hidden // 2, activation=LeakyReLU(alpha=0.01)),
+                tf.keras.layers.Dense(hidden // 2, activation=LeakyReLU(alpha=0.1)),
                 tf.keras.layers.Dropout(dropout_rate * 0.5),
                 # Final classification layer
                 tf.keras.layers.Dense(
